@@ -267,6 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var webView: WKWebView!
     private var docOpenedByApp = false
     private var isJavaScriptReady = false
+    /// 前端未就绪时排队的 JS 调用，(事件名, JSON)
+    private var pendingJSCalls: [(String, String)] = []
     private var decoyTimer: DispatchSourceTimer?
     private var decoyHealTimer: DispatchSourceTimer?
     private var recentMenu: NSMenu!
@@ -714,15 +716,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let obj: [String: Any] = payload.isEmpty ? ["_": 0] : payload
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let json = String(data: data, encoding: .utf8) else { return }
-        let js = "window.MDWriter && window.MDWriter.on('\(name)', \(json));"
-        DispatchQueue.main.async { self.webView.evaluateJavaScript(js, completionHandler: nil) }
+
+        // 前端尚未就绪时先排队，否则事件会被静默丢弃。
+        //
+        // macOS 处理「用某 App 打开文件」的顺序是：
+        //   Apple Event（application:open:）→ applicationDidFinishLaunching
+        // 也就是说 openFile 比 markReady 更早执行。WKWebView 那时还没
+        // loadHTMLString 完成，evaluateJavaScript 打进去的命令不会执行，
+        // 于是窗口打开是一片空白 —— 看起来就像「文件没打开」。
+        guard isJavaScriptReady else {
+            pendingJSCalls.append((name, json))
+            return
+        }
+        DispatchQueue.main.async {
+            let js = "window.MDWriter && window.MDWriter.on('\(name)', \(json));"
+            self.webView.evaluateJavaScript(js, completionHandler: nil)
+        }
     }
 
-    /// 页面加载完成后标记 JS 可用（同步查询需要）
+    /// 页面加载完成后标记 JS 可用，并补发排队中的调用
     private func markReady() {
         isJavaScriptReady = true
-        if CommandLine.arguments.count <= 1 {
-            callJS("ready", [:])
+        callJS("ready", [:])
+        // 排队期间积压的事件按顺序补发 —— documentOpened 必须排在 ready 之后，
+        // 否则前端还没挂上监听就收到文件，事件又丢了。
+        let queued = pendingJSCalls
+        pendingJSCalls.removeAll()
+        for (name, json) in queued {
+            let js = "window.MDWriter && window.MDWriter.on('\(name)', \(json));"
+            DispatchQueue.main.async { self.webView.evaluateJavaScript(js, completionHandler: nil) }
         }
     }
 
