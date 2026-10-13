@@ -24,7 +24,7 @@
 # Bash 的一个坑（在本项目实际踩到）：
 #   set -u 下，"$VAR" 后面紧跟中文字符时，bash 会把中文的 UTF-8 字节
 #   当成变量名的一部分，报 "$VAR?: unbound variable"。
-#   例：echo "已有 $APP，属主是 $OWNER" 会炸
+#   例：echo "已有 ${APP}，属主是 $OWNER" 会炸
 #   解法：一律写成 ${APP}，用花括号显式界定边界。
 #   下面所有紧跟中文的变量都用了 ${...}，改脚本时请保持这个写法。
 
@@ -82,6 +82,15 @@ if info.get("CFBundleIdentifier") != "com.mdwriter.app":
     print("    bundle id 已还原为 com.mdwriter.app")
 PYEOF
 
+# 关键：改完 Info.plist 必须重新签名。
+# 签名里记录的是旧的 bundle id（com.mdwriter.dev），plist 改成
+# com.mdwriter.app 之后两者不一致，签名即失效 ——
+# spctl 报 "invalid Info.plist (plist or signature have been modified)"。
+# macOS 会拒绝向签名无效的 App 派发 open 事件，
+# 症状就是「双击 .md 只启动 App 却不打开文件」。
+codesign --force --deep --sign - "$DEST_APP" 2>/dev/null \
+  && echo "    已重新签名"
+
 echo "    已安装（属主 $(stat -f '%Su' "$DEST_APP")）"
 
 echo "==> 注销开发副本与陈旧记录"
@@ -124,6 +133,25 @@ echo "==> 设置默认处理器"
 swift "$ROOT/build/set-default.swift" "$BUNDLE_ID" "$UTI_STD" "$UTI_FALLBACK"
 
 echo "==> 验证"
+
+# 签名有效性：这是「只启动不打开」的隐形杀手。
+# 签名无效时 macOS 会拒绝派发 open 事件，且没有任何提示。
+if ! codesign --verify --deep "$DEST_APP" 2>/dev/null; then
+  echo "    签名无效，重新签名..."
+  codesign --force --deep --sign - "$DEST_APP" 2>/dev/null || true
+fi
+# plist 与签名里的 bundle id 必须一致
+PLIST_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+            "$DEST_APP/Contents/Info.plist" 2>/dev/null || echo '?')"
+SIGN_ID="$(codesign -dv "$DEST_APP" 2>&1 | sed -n 's/^Identifier=//p')"
+if [ "$PLIST_ID" != "$SIGN_ID" ]; then
+  echo "    bundle id 不一致: plist=$PLIST_ID 签名=$SIGN_ID"
+  codesign --force --deep --sign - "$DEST_APP" 2>/dev/null || true
+  SIGN_ID="$(codesign -dv "$DEST_APP" 2>&1 | sed -n 's/^Identifier=//p')"
+fi
+[ "$PLIST_ID" = "$SIGN_ID" ] \
+  && echo "    签名有效（${SIGN_ID}）" \
+  || echo "    [注意] 签名仍异常: plist=$PLIST_ID 签名=$SIGN_ID"
 # 检查开发副本是否又混进来。
 # 注意 make app 里的 pack/finalize 可能触发扫描，把 native/ 那份也记进 LS，
 # 所以注销必须放在构建之后 —— 也就是这个位置。
