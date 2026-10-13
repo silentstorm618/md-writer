@@ -21,11 +21,9 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<!-- macOS 13+ 把 .md 解析为系统级 public.markdown，App 必须声明支持它
-				     （"cannot open files in the 'Markdown 文本' format" 就是缺这个）。
-				     保留 net.daringfireball.markdown 以兼容 macOS 12 及更早。 -->
 				<string>public.markdown</string>
 				<string>net.daringfireball.markdown</string>
+				<string>com.unknown.md</string>
 			</array>
 		</dict>
 		<dict>
