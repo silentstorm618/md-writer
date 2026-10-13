@@ -8,6 +8,9 @@ import { renderInto, renderMarkdown, stats, ensureMermaid, renderMermaidIn } fro
 import { THEMES, FONTS, FONT_SIZES, themeById, fontById, themeVars } from './core/theme.js';
 import { exportHTML, exportDOCX, exportPDF, exportPNG, buildTOC } from './export/index.js';
 import { getTurndown, htmlToMarkdownSync } from './core/turndown.js';
+// 刻意命名为 tr 而不是 t：本文件里到处是 find((t) => t.path) 这样的写法，
+// 导入成 t 会被局部参数遮蔽，导致运行时报 "t is not a function"。
+import { t as tr, initI18n, setLang, getPreference, applyDOM, LANG_OPTIONS, getLang } from './core/i18n.js';
 
 /* ============================================================
  * 状态
@@ -140,7 +143,7 @@ function sendOrDownload(action, payload, filename, data, mime) {
  * 每个 Tab 拥有独立的 wysiwyg / source 编辑器实例，
  * 因此各 Tab 的内容、撤销栈、滚动位置、光标都互不干扰。
  */
-function openTab({ name = '未命名', path = '', md = '', dirty = false, activate = true } = {}) {
+function openTab({ name = tr('doc.untitled'), path = '', md = '', dirty = false, activate = true } = {}) {
   const id = `tab_${++tabSeq}`;
   const tab = {
     id, name, path, md, dirty,
@@ -332,21 +335,22 @@ function updateDirty() {
   const el = $('save-state');
   if (el) {
     if (tab.dirty) {
-      el.textContent = '已修改';
+      el.textContent = tr('status.modified');
     } else if (lastSavedAt) {
       // 保存后 3 秒内显示具体时间，避免一直 "已保存" 让人摸不着头脑
       const since = Date.now() - lastSavedAt;
       if (since < 3000) {
-        const t = new Date(lastSavedAt);
-        const hh = String(t.getHours()).padStart(2, '0');
-        const mm = String(t.getMinutes()).padStart(2, '0');
-        const ss = String(t.getSeconds()).padStart(2, '0');
-        el.textContent = `已保存于 ${hh}:${mm}:${ss}`;
+        // 注意别用 t 当变量名，会遮蔽 i18n 的 t()
+        const dt = new Date(lastSavedAt);
+        const hh = String(dt.getHours()).padStart(2, '0');
+        const mm = String(dt.getMinutes()).padStart(2, '0');
+        const ss = String(dt.getSeconds()).padStart(2, '0');
+        el.textContent = tr('status.savedAt', { time: `${hh}:${mm}:${ss}` });
       } else {
-        el.textContent = '已保存';
+        el.textContent = tr('status.saved');
       }
     } else {
-      el.textContent = '已保存';
+      el.textContent = tr('status.saved');
     }
     el.classList.toggle('dirty', tab.dirty);
   }
@@ -355,7 +359,7 @@ function updateDirty() {
   // 状态栏补充未保存数量
   const multi = $('tab-dirty-count');
   if (multi) {
-    multi.textContent = dirtyCount > 1 ? `${dirtyCount} 个未保存` : '';
+    multi.textContent = dirtyCount > 1 ? tr('status.unsavedCount', { n: dirtyCount }) : '';
   }
 }
 
@@ -444,7 +448,7 @@ function offerRestoreUndo() {
   btn.textContent = '撤销恢复（清空草稿）';
   btn.addEventListener('click', () => {
     localStorage.removeItem('mdwriter-tabs');
-    toast('草稿已清空', 'ok');
+    toast(tr('toast.draftCleared'), 'ok');
     btn.remove();
   });
   setTimeout(() => btn.remove(), 8000); // 8 秒后自动消失
@@ -502,7 +506,9 @@ function updateStats() {
   const s = stats(md);
   const el = $('statusbar-stats');
   if (el) {
-    el.textContent = `${s.chars} 字 · ${s.lines} 行 · ${s.words} 词 · 约 ${s.minutes} 分钟`;
+    el.textContent = tr('status.stats', {
+      chars: s.chars, lines: s.lines, words: s.words, minutes: s.minutes,
+    });
   }
   updateCursorPos(tab, md);
 }
@@ -651,11 +657,12 @@ async function renderSidebar() {
   if (!el) return;
 
   if (state.libraryView === 'toc') {
-    el.innerHTML = buildTOC(currentMarkdown(), state.tocDepth) || '<div class="side-empty">还没有标题<br><span>用 # 开头创建标题</span></div>';
+    el.innerHTML = buildTOC(currentMarkdown(), state.tocDepth)
+      || `<div class="side-empty">${tr('sidebar.emptyToc')}<br><span>${tr('sidebar.emptyTocHint')}</span></div>`;
   } else {
     const files = await window.MDWriterAssets?.list?.() || [];
     if (!files.length) {
-      el.innerHTML = '<div class="side-empty">还没有图片<br><span>直接粘贴或拖入图片即可</span></div>';
+      el.innerHTML = `<div class="side-empty">${tr('sidebar.emptyImages')}<br><span>${tr('sidebar.emptyImagesHint')}</span></div>`;
     } else {
       el.innerHTML = files.map((f) => `
         <div class="asset-item" data-url="${f.url}">
@@ -675,45 +682,46 @@ async function doExport(kind) {
   if (!tab) return;
   const md = currentMarkdown();
   if (!md.trim()) {
-    toast('文档是空的，没什么可导出的', 'warn');
+    toast(tr('toast.emptyDoc'), 'warn');
     return;
   }
   tab.md = md;
 
-  const base = (tab.name || '未命名').replace(/\.md$/i, '');
+  const base = (tab.name || tr('doc.untitled')).replace(/\.md$/i, '');
   const opts = { title: tab.name, md, themeId: state.themeId, fontId: state.fontId, fontSize: state.fontSize };
-  const t = toast;
+  // 别叫 t，会遮蔽 i18n 的 t()
+  const say = toast;
 
   try {
     if (kind === 'html') {
-      t('正在生成 HTML…');
+      say(tr('toast.exporting', { fmt: 'HTML' }));
       const html = await exportHTML(opts);
       sendOrDownload('export', {
         base64: btoa(unescape(encodeURIComponent(html))),
         name: `${base}.html`, ext: 'html',
       }, `${base}.html`, new Blob([html], { type: 'text/html;charset=utf-8' }), 'text/html');
-      t('HTML 已导出', 'ok');
+      say(tr('toast.exported', { fmt: 'HTML' }), 'ok');
     } else if (kind === 'docx') {
-      t('正在生成 Word 文档…');
+      say(tr('toast.exporting', { fmt: 'Word' }));
       const blob = await exportDOCX(opts);
       const buf = await blob.arrayBuffer();
       const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
       sendOrDownload('export', { base64: b64, name: `${base}.docx`, ext: 'docx' },
         `${base}.docx`, blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      t('Word 文档已导出', 'ok');
+      say(tr('toast.exported', { fmt: 'Word' }), 'ok');
     } else if (kind === 'png') {
-      t('正在生成长图…');
+      say(tr('toast.exporting', { fmt: 'PNG' }));
       const el = $('preview');
       const dataURL = await exportPNG({ sourceEl: el, scale: 2, themeId: state.themeId });
       const b64 = dataURL.split(',')[1];
       sendOrDownload('export', { base64: b64, name: `${base}.png`, ext: 'png' },
         `${base}.png`, dataURLToBlob(dataURL), 'image/png');
-      t('长图已导出', 'ok');
+      say(tr('toast.exported', { fmt: 'PNG' }), 'ok');
     } else if (kind === 'pdf') {
       const html = await exportHTML({ ...opts, inlineImg: true });
       if (isNative) {
         send('printHTML', { html });
-        t('在打印面板里选择「PDF → 存储为 PDF」', 'info');
+        say(tr('toast.pdfHint'), 'info');
       } else {
         const w = window.open('', '_blank');
         w.document.write(html);
@@ -726,11 +734,11 @@ async function doExport(kind) {
         base64: btoa(unescape(encodeURIComponent(md))),
         name: `${base}.md`, ext: 'md',
       }, `${base}.md`, blob, 'text/markdown');
-      t('Markdown 已导出', 'ok');
+      say(tr('toast.exported', { fmt: 'Markdown' }), 'ok');
     }
   } catch (e) {
     console.error(e);
-    t(`导出失败：${e.message}`, 'error');
+    say(tr('toast.exportFailed', { msg: e.message }), 'error');
   }
 }
 
@@ -763,11 +771,11 @@ function doSave(as = false) {
       content: md, name: tab.name, path: tab.path, tabId: tab.id,
     });
   } else {
-    downloadBlob(`${(tab.name || '未命名').replace(/\.md$/, '')}.md`, md, 'text/markdown');
+    downloadBlob(`${(tab.name || tr('doc.untitled')).replace(/\.md$/, '')}.md`, md, 'text/markdown');
     tab.dirty = false;
     renderTabBar();
     updateDirty();
-    toast('已下载 .md 文件', 'ok');
+    toast(tr('toast.downloaded'), 'ok');
   }
 }
 
@@ -818,7 +826,7 @@ async function handleImageFile(file, tabId) {
     updateDirty();
   }
   scheduleAutosave();
-  toast(`已插入图片：${name}`, 'ok');
+  toast(tr('toast.imageInserted', { name }), 'ok');
   renderSidebar();
 }
 
@@ -886,15 +894,15 @@ const nativeHandlers = {
     const existing = state.tabs.find((t) => t.path && t.path === p.path);
     if (existing) {
       activateTab(existing.id);
-      toast(`${p.name} 已经打开，已切换过去`, 'info');
+      toast(tr('toast.alreadyOpen', { name: p.name }), 'info');
       return;
     }
     const tab = openTab({
-      name: p.name || '未命名',
+      name: p.name || tr('doc.untitled'),
       path: p.path || '',
       md: p.content || '',
     });
-    toast(`已打开 ${tab.name}`, 'ok');
+    toast(tr('toast.opened', { name: tab.name }), 'ok');
   },
 
   /**
@@ -909,7 +917,7 @@ const nativeHandlers = {
     lastSavedAt = Date.now();
     renderTabBar();
     updateDirty();
-    toast(`已保存 ${tab.name}`, 'ok');
+    toast(tr('toast.saved', { name: tab.name }), 'ok');
     // 批量保存：继续下一个
     if (pendingSaveChain) {
       const fn = pendingSaveChain;
@@ -929,16 +937,16 @@ const nativeHandlers = {
     // 用时间戳命名（"草稿 2026-10-13 11:02"），多 Tab 一眼能区分
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
-    const name = `草稿 ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const name = `${tr('toast.draftPrefix')} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     openTab({ name, md: '' });
-    toast(`已新建「${name}」`, 'ok');
+    toast(tr('toast.created', { name }), 'ok');
   },
 
   /** 依次保存所有未保存的 Tab */
   saveAll() {
     const dirty = state.tabs.filter((t) => t.dirty);
     if (!dirty.length) {
-      toast('没有需要保存的文档', 'info');
+      toast(tr('toast.nothingToSave'), 'info');
       return;
     }
     // 原生一次只能弹一个面板，依次保存
@@ -947,8 +955,8 @@ const nativeHandlers = {
     const next = () => {
       if (i >= dirty.length) {
         toast(failed > 0
-          ? `已保存 ${dirty.length - failed} 个，${failed} 个超时`
-          : `已保存 ${dirty.length} 个文档`, failed > 0 ? 'warn' : 'ok');
+          ? tr('toast.savedPartial', { n: dirty.length - failed, failed })
+          : tr('toast.savedAll', { n: dirty.length }), failed > 0 ? 'warn' : 'ok');
         return;
       }
       const tab = dirty[i++];
@@ -973,8 +981,8 @@ const nativeHandlers = {
 
   /** 示例文档 -> 新开一个 Tab */
   openSample() {
-    openTab({ name: '使用说明.md', md: SAMPLE_DOC });
-    toast('已打开使用说明', 'ok');
+    openTab({ name: tr('doc.sample'), md: sampleDoc() });
+    toast(tr('toast.helpOpened'), 'ok');
   },
 
   closeTab() {
@@ -996,6 +1004,14 @@ const nativeHandlers = {
   },
 
   setMode(p) { setMode(p.mode); },
+
+  /**
+   * 原生主动推送语言（启动时注入失败，或用户在系统设置里改了语言）。
+   * silent=true：这是原生告诉我的，不要再回推给原生，避免来回打乒乓。
+   */
+  setLanguage(p) {
+    if (p.lang) setLang(p.lang, { silent: true });
+  },
   setThemeMode(p) {
     state.themeMode = p.mode;
     applyThemeVars();
@@ -1042,18 +1058,18 @@ const nativeHandlers = {
   },
 
   nativeToast(p) { toast(p.text, p.kind); },
-  exportDone(p) { toast(`已导出到 ${p.name}`, 'ok'); },
+  exportDone(p) { toast(tr('toast.exportedTo', { name: p.name }), 'ok'); },
 
   saveCancelled(p) {
     // 用户在原生保存面板里点了取消：
     // 如果是"保存后关闭 Tab"的流程，把 pendingCloseAfterSave 清掉，不关 Tab
     if (pendingCloseAfterSave && (!p.tabId || pendingCloseAfterSave === p.tabId)) {
       pendingCloseAfterSave = null;
-      toast('保存已取消', 'warn');
+      toast(tr('toast.saveCancelled'), 'warn');
     }
   },
 
-  assetSaved(p) { toast(`图片已保存：${p.name}`, 'ok'); },
+  assetSaved(p) { toast(tr('toast.imageSaved', { name: p.name }), 'ok'); },
   assetList(p) {
     // 原生把磁盘 assets/ 目录下的图片以 base64 dataURL 形式回传，统一加入 MDWriterAssets
     const files = p.files || [];
@@ -1082,7 +1098,7 @@ function pastePlain() {
       w.exec.snippet(text);
     }
     markDirty();
-  }).catch(() => toast('无法读取剪贴板', 'warn'));
+  }).catch(() => toast(tr('toast.clipboardFailed'), 'warn'));
 }
 
 function toggleSidebar() {
@@ -1107,16 +1123,16 @@ function showFindBar() {
     findBar = document.createElement('div');
     findBar.className = 'find-bar';
     findBar.innerHTML = `
-      <input id="find-input" type="text" placeholder="查找…" autocomplete="off" spellcheck="false">
+      <input id="find-input" type="text" placeholder="${tr('find.placeholder')}" autocomplete="off" spellcheck="false">
       <span id="find-count" class="find-count">0</span>
-      <button id="find-prev" title="上一个">↑</button>
-      <button id="find-next" title="下一个">↓</button>
-      <button id="find-replace-toggle" title="替换">⇄</button>
-      <button id="find-close" title="关闭">×</button>
+      <button id="find-prev" title="${tr('find.prev')}">↑</button>
+      <button id="find-next" title="${tr('find.next')}">↓</button>
+      <button id="find-replace-toggle" title="${tr('find.replace')}">⇄</button>
+      <button id="find-close" title="${tr('find.close')}">×</button>
       <div id="find-replace-row" class="find-replace-row" hidden>
-        <input id="replace-input" type="text" placeholder="替换为…" autocomplete="off" spellcheck="false">
-        <button id="find-replace-one" title="替换当前">替换</button>
-        <button id="find-replace-all" title="替换全部">全部</button>
+        <input id="replace-input" type="text" placeholder="${tr('find.replace.placeholder')}" autocomplete="off" spellcheck="false">
+        <button id="find-replace-one" title="${tr('find.replaceCurrent')}">${tr('find.replace')}</button>
+        <button id="find-replace-all" title="${tr('find.replaceAll')}">${tr('find.all')}</button>
       </div>
     `;
     document.body.appendChild(findBar);
@@ -1167,12 +1183,12 @@ function showDirtyConfirm(tabName) {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-card">
-        <div class="modal-title">保存对「${escapeHTML(tabName)}」的修改吗？</div>
-        <div class="modal-body">关闭前未保存的修改将会丢失。</div>
+        <div class="modal-title">${tr('dialog.saveChanges.title', { name: escapeHTML(tabName) })}</div>
+        <div class="modal-body">${tr('dialog.saveChanges.body')}</div>
         <div class="modal-actions">
-          <button data-act="cancel" autofocus>取消</button>
-          <button data-act="discard">不保存</button>
-          <button data-act="save" class="primary">保存</button>
+          <button data-act="cancel" autofocus>${tr('dialog.cancel')}</button>
+          <button data-act="discard">${tr('dialog.discard')}</button>
+          <button data-act="save" class="primary">${tr('dialog.save')}</button>
         </div>
       </div>
     `;
@@ -1355,7 +1371,7 @@ function replaceAllFunc() {
     }
     targets.forEach((tn) => { tn.nodeValue = tn.nodeValue.split(findState.q).join(replacement); });
     runFind(findState.q);
-    toast(`已替换 ${targets.length} 处`, 'ok');
+    toast(tr('toast.replaced', { n: targets.length }), 'ok');
   } else if (state.mode === 'source' && activeTab()?.source?.view) {
     const view = activeTab().source.view;
     const text = view.state.doc.toString();
@@ -1369,7 +1385,7 @@ function replaceAllFunc() {
     }
     changes.reverse().forEach((c) => view.dispatch({ changes: c }));
     runFind(findState.q);
-    toast(`已替换 ${changes.length} 处`, 'ok');
+    toast(tr('toast.replaced', { n: changes.length }), 'ok');
   }
 }
 
@@ -1433,7 +1449,7 @@ $$
 `;
   setMarkdown(md);
   setMode('source');
-  toast('已插入语法速查文档', 'ok');
+  toast(tr('toast.cheatsheetInserted'), 'ok');
 }
 
 /* ============================================================
@@ -1444,9 +1460,9 @@ function buildThemeCards() {
   const el = $('theme-cards');
   if (!el) return;
   el.innerHTML = THEMES.map((t) => `
-    <button class="theme-card${t.id === state.themeId ? ' active' : ''}" data-theme-card="${t.id}" title="${t.desc}">
+    <button class="theme-card${t.id === state.themeId ? ' active' : ''}" data-theme-card="${t.id}" title="${tr(`theme.${t.id}.desc`)}">
       <span class="theme-dot" style="background:${t.vars['--t-bg']};border-color:${t.vars['--t-border']}"></span>
-      <span class="theme-name">${t.label}</span>
+      <span class="theme-name">${tr(`theme.${t.id}`)}</span>
     </button>`).join('');
 
   el.addEventListener('click', (e) => {
@@ -1463,7 +1479,7 @@ function buildFontControls() {
   const sizeSel = $('size-select');
   if (!fontSel || !sizeSel) return;
 
-  fontSel.innerHTML = FONTS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('');
+  fontSel.innerHTML = FONTS.map((f) => `<option value="${f.id}">${tr(`font.${f.id}`)}</option>`).join('');
   sizeSel.innerHTML = FONT_SIZES.map((s) => `<option value="${s}">${s}px</option>`).join('');
   fontSel.value = state.fontId;
   sizeSel.value = String(state.fontSize);
@@ -1478,6 +1494,24 @@ function buildFontControls() {
     applyThemeVars();
     scheduleAutosave();
   });
+}
+
+/**
+ * 界面语言下拉。切换后会通知原生重建菜单（send('setLanguage')）。
+ * 语言名本身保持各自语言（"简体中文" / "English"），只有"跟随系统"随界面语言变。
+ */
+function buildLanguageControl() {
+  const sel = $('lang-select');
+  if (!sel) return;
+  const keep = sel.value || getPreference();
+  sel.innerHTML = LANG_OPTIONS.map((o) => `<option value="${o.value}">${tr(o.labelKey)}</option>`).join('');
+  sel.value = keep || getPreference();
+  // 用 onchange（覆盖式）而非 addEventListener：重建时会重新赋值，避免监听器叠加
+  sel.onchange = () => {
+    const opt = LANG_OPTIONS.find((o) => o.value === sel.value);
+    setLang(sel.value);
+    toast(tr('lang.changed', { lang: tr(opt ? opt.labelKey : 'lang.auto') }), 'ok');
+  };
 }
 
 function wireToolbar() {
@@ -1579,7 +1613,7 @@ function wireToolbar() {
  * 示例文档
  * ============================================================ */
 
-const SAMPLE_DOC = `# MD Writer 使用指南
+const SAMPLE_DOC_ZH = `# MD Writer 使用指南
 
 欢迎使用 **MD Writer** —— 一个原生的 macOS Markdown 编辑器，支持像 Word 一样直接排版，也能随时切到源码。
 
@@ -1671,6 +1705,103 @@ $$
 准备好了就开始写。右侧的「目录」会自动跟着标题更新。
 `;
 
+const SAMPLE_DOC_EN = `# MD Writer Guide
+
+Welcome to **MD Writer** — a native macOS Markdown editor. Format text like a word processor, or drop to source whenever you like.
+
+> Write on the left, preview on the right. Export everything: HTML, PDF, Word, PNG.
+
+## Tabs
+
+Every file gets its own tab. Content, undo history and scroll position stay isolated.
+
+| Shortcut | Action |
+| --- | --- |
+| \`⌘N\` | New tab |
+| \`⌘O\` | Open file (opens a new tab) |
+| \`⌘W\` | Close current tab |
+| \`⌥⇧⌘W\` | Close other tabs |
+| \`⇧⌘]\` / \`⇧⌘[\` | Next / previous tab |
+| \`⌘1\` … \`⌘9\` | Jump to the Nth tab |
+
+> Reopening a file that is already open just switches to its tab.
+> Middle-click closes a tab; double-click empty space in the tab bar creates one.
+
+## Three editing modes
+
+| Shortcut | Mode | Notes |
+| --- | --- | --- |
+| \`⌥⌘1\` | Rich text | Format as you type, WYSIWYG |
+| \`⌥⌘2\` | Markdown source | Source editing with syntax highlighting |
+| \`⌥⌘3\` | Split | Source on the left, live preview on the right |
+
+## Common shortcuts
+
+- **\`⌘B\` / \`⌘I\` / \`⌘U\`** — bold / italic / underline
+- **\`⌘S\`** — save, **\`⇧⌘S\`** — save as
+- **\`⌘⇧E\`** — export HTML, **\`⌥⌘E\`** — export Word
+- **\`⌘⇧M\`** — insert a Mermaid diagram
+- **\`⌘⇧G\`** — insert an image (or just paste / drop one)
+- **\`⌘,\`** — open the inspector to change theme / font / size
+
+## Formatting
+
+### Lists and tasks
+
+- [x] WYSIWYG editing
+- [x] Source and split modes
+- [ ] Collaborative editing (planned)
+
+1. Ordered list
+2. Second item
+   - Nested item
+
+### Syntax highlighting
+
+\`\`\`javascript
+function hello(name) {
+  return \`Hello, \${name}!\`;
+}
+console.log(hello("Markdown"));
+\`\`\`
+
+### Diagrams
+
+\`\`\`mermaid
+graph TD
+  A[Write Markdown] --> B{Need a diagram?}
+  B -->|Yes| C[Draw with Mermaid]
+  B -->|No| D[Style the text]
+  C --> D
+  D --> E[Export]
+\`\`\`
+
+### Math
+
+Inline: Euler's identity $e^{i\\pi} + 1 = 0$
+
+Block:
+
+$$
+\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}
+$$
+
+## Quotes and emphasis
+
+> Markdown's strength: the source is plain text. Any editor can open it, any platform can read it.
+
+Use **bold** for emphasis, *italics* for asides, ~~strikethrough~~ for deprecated bits, and ==highlight== for key points.
+
+---
+
+Ready when you are. The outline on the right follows your headings.
+`;
+
+/** 首启示例文档，跟随当前界面语言。 */
+function sampleDoc() {
+  return getLang() === 'en' ? SAMPLE_DOC_EN : SAMPLE_DOC_ZH;
+}
+
 /* ============================================================
  * 启动
  * ============================================================ */
@@ -1678,6 +1809,24 @@ $$
 function boot() {
   if (window.__booted) return;
   window.__booted = true;
+
+  initI18n();          // 读原生注入的 window.__MD_LANG__
+  applyDOM();          // 静态文案：工具栏 / 检视器 / 状态栏
+  buildLanguageControl();
+
+  // 切语言后重建所有动态生成的 UI
+  document.addEventListener('mdwriter:langchange', () => {
+    applyDOM();
+    buildThemeCards();
+    buildFontControls();
+    buildLanguageControl();
+    renderSidebar();
+    updateDirty();
+    updateStats();
+    renderTabBar();
+    // 查找栏是动态插入的，直接销毁，下次打开时按新语言重建
+    if (findBar) { findBar.remove(); findBar = null; }
+  });
 
   buildThemeCards();
   buildFontControls();
@@ -1703,7 +1852,7 @@ function boot() {
 
       for (const t of draft.tabs) {
         openTab({
-          name: t.name || '未命名',
+          name: t.name || tr('doc.untitled'),
           path: t.path || '',
           md: t.md || '',
           dirty: !!t.dirty,
@@ -1712,13 +1861,13 @@ function boot() {
       }
       const idx = Math.min(draft.activeIndex ?? 0, state.tabs.length - 1);
       activateTab(state.tabs[idx].id);
-      toast(`已恢复 ${state.tabs.length} 个文档`, 'ok');
+      toast(tr('toast.restored', { n: state.tabs.length }), 'ok');
       // 给用户 8 秒的"撤销恢复"机会
       offerRestoreUndo();
     } else {
       // 首次启动：给一份使用说明
-      openTab({ name: '使用说明.md', md: SAMPLE_DOC });
-      toast('就绪。⌘N 新建，⌘O 打开，每个文件都是独立标签页', 'ok');
+      openTab({ name: tr('doc.sample'), md: sampleDoc() });
+      toast(tr('toast.ready'), 'ok');
     }
   } finally {
     suppressDirtyTitle = false;

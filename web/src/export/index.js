@@ -4,6 +4,8 @@
  */
 import { renderMarkdown, ensureMermaid, renderMermaidIn, slugify } from '../core/renderer.js';
 import { themeById, fontById, themeVars, contentCSS } from '../core/theme.js';
+// 导出产物里的文案（目录标题、默认文件名等）跟随界面语言
+import { t as tr, getLang } from '../core/i18n.js';
 
 /* ============================================================
  * 1. HTML 单文件
@@ -60,7 +62,7 @@ function blobToDataURL(blob) {
  */
 export async function exportHTML(opts) {
   const {
-    title = '未命名文档', md = '', themeId = 'tech', fontId = 'system',
+    title = tr('export.untitledDoc'), md = '', themeId = 'tech', fontId = 'system',
     fontSize = 16, inlineImg = true, toc = true,
   } = opts;
 
@@ -111,7 +113,7 @@ body {
   holder.remove();
 
   const doc = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${getLang()}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -191,7 +193,7 @@ export function buildTOC(md, maxDepth = 3) {
   const minDepth = unique.reduce((m, h) => Math.min(m, h.depth), Infinity);
   const toc = render(0, unique.length, minDepth);
 
-  return `<nav class="md-toc"><div class="md-toc-title">目录</div>${toc}</nav>`;
+  return `<nav class="md-toc"><div class="md-toc-title">${tr('export.tocTitle')}</div>${toc}</nav>`;
 }
 
 /* ============================================================
@@ -255,7 +257,7 @@ function openPrintWindow(html) {
  */
 export async function exportDOCX(opts) {
   const {
-    title = '未命名文档', md = '', fontId = 'system', fontSize = 16,
+    title = tr('export.untitledDoc'), md = '', fontId = 'system', fontSize = 16,
   } = opts;
 
   const docxMod = await loadDocx();
@@ -317,10 +319,10 @@ export async function exportDOCX(opts) {
                 spacing: { before: 160, after: 160 },
               }));
             } else {
-              children.push(new Paragraph({ children: [new TextRun({ text: '[Mermaid 图]', italics: true, size: size - 2 })] }));
+              children.push(new Paragraph({ children: [new TextRun({ text: tr('export.mermaidPlaceholder'), italics: true, size: size - 2 })] }));
             }
           } catch {
-            children.push(new Paragraph({ children: [new TextRun({ text: '[Mermaid 图]', italics: true, size: size - 2 })] }));
+            children.push(new Paragraph({ children: [new TextRun({ text: tr('export.mermaidPlaceholder'), italics: true, size: size - 2 })] }));
           }
           break;
         }

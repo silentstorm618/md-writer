@@ -15,6 +15,8 @@ import {
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { tags as t } from '@lezer/highlight';
+// 注意：本文件已用 t 表示 lezer 的 tags，所以 i18n 必须叫 tr
+import { t as tr } from '../core/i18n.js';
 
 /**
  * 深色配色取自实际界面：底 #101010、强调 #7ba6f8、
@@ -117,8 +119,8 @@ export function createSourceEditor(host, opts = {}) {
       EditorView.updateListener.of((u) => {
         if (u.docChanged) onChange(u.state.doc.toString());
       }),
-      EditorView.contentAttributes.of({ 'aria-label': 'Markdown 源码' }),
-      placeholder('在这里写 Markdown…'),
+      EditorView.contentAttributes.of({ 'aria-label': tr('source.aria') }),
+      placeholder(tr('source.placeholder')),
     ],
   });
 

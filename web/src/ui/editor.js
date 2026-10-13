@@ -8,6 +8,7 @@
  *    HTML -> Markdown 用自己的 DOM 序列化器，产出干净的 Markdown。
  */
 import { slugify } from '../core/renderer.js';
+import { t as tr } from '../core/i18n.js';
 
 export function createWYSIWYG(host, opts = {}) {
   const { onChange = () => {}, onCommand = () => {}, onPasteHTML = null, ensureTurndown = null } = opts;
@@ -558,7 +559,7 @@ export function createWYSIWYG(host, opts = {}) {
   function insertLink() {
     const sel = window.getSelection();
     const text = sel?.toString() || '';
-    const url = prompt('请输入链接地址', 'https://');
+    const url = prompt(tr('editor.linkPrompt'), 'https://');
     if (!url) return;
     host.focus();
     if (text) {

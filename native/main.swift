@@ -18,6 +18,243 @@ struct BridgeCommand {
 /// 原生 -> 前端 的回调名（前端在 window.MDWriter.on 监听）
 let CALLBACK = "mdwriter.callback"
 
+// MARK: - 本地化（L10n）
+
+/// 中英双语词典。
+///
+/// 本项目是 `swiftc` 单文件编译，没有 Xcode 资源 bundle，
+/// 标准 `.lproj` + `NSLocalizedString` 那一套用不了，所以自建词典。
+///
+/// 语言真源在 `UserDefaults["MDWriter.language"]`：
+/// - 启动时把它注入前端（WKUserScript 写 `window.__MD_LANG__`）
+/// - 前端切换语言时回传 `setLanguage`，这里存下来并重建菜单
+enum L10n {
+
+    static let preferenceKey = "MDWriter.language"
+
+    /// 用户偏好：auto | zh-CN | en
+    static var preference: String {
+        get { UserDefaults.standard.string(forKey: preferenceKey) ?? "auto" }
+        set { UserDefaults.standard.set(newValue, forKey: preferenceKey) }
+    }
+
+    /// --print-lang=xx 用的临时覆盖，不落盘（避免调试命令改掉用户偏好）
+    private static var forced: String?
+    static func force(_ lang: String?) { forced = lang }
+
+    /// 实际生效的语言（auto 时看系统首选语言）
+    static var current: String {
+        if let f = forced { return f }
+        let pref = preference
+        if pref == "zh-CN" || pref == "en" { return pref }
+        let first = Locale.preferredLanguages.first ?? "en"
+        return first.hasPrefix("zh") ? "zh-CN" : "en"
+    }
+
+    /// 取文案。支持 {name} 占位符。
+    static func tr(_ key: String, _ args: [String: String] = [:]) -> String {
+        let table = current == "en" ? en : zh
+        var s = table[key] ?? zh[key] ?? key
+        for (k, v) in args { s = s.replacingOccurrences(of: "{\(k)}", with: v) }
+        return s
+    }
+
+    // MARK: 词典：简体中文
+
+    static let zh: [String: String] = [
+        // 应用菜单
+        "menu.about": "关于 MD Writer",
+        "menu.preferences": "偏好设置…",
+        "menu.hide": "隐藏 MD Writer",
+        "menu.quit": "退出 MD Writer",
+        // 文件
+        "menu.file": "文件",
+        "menu.newTab": "新建标签页",
+        "menu.open": "打开…",
+        "menu.openRecent": "打开最近",
+        "menu.clearRecent": "清空最近文件",
+        "menu.closeTab": "关闭标签页",
+        "menu.closeOtherTabs": "关闭其他标签页",
+        "menu.save": "保存",
+        "menu.saveAs": "另存为…",
+        "menu.exportHTML": "导出为 HTML…",
+        "menu.exportPDF": "导出为 PDF…",
+        "menu.exportWord": "导出为 Word…",
+        "menu.exportPNG": "导出为 PNG 长图…",
+        "menu.print": "打印…",
+        "recent.empty": "（无最近文件）",
+        // 编辑
+        "menu.edit": "编辑",
+        "menu.undo": "撤销",
+        "menu.redo": "重做",
+        "menu.cut": "剪切",
+        "menu.copy": "拷贝",
+        "menu.paste": "粘贴",
+        "menu.pastePlain": "粘贴为纯文本",
+        "menu.selectAll": "全选",
+        "menu.find": "查找…",
+        // 格式
+        "menu.format": "格式",
+        "menu.bold": "粗体",
+        "menu.italic": "斜体",
+        "menu.underline": "下划线",
+        "menu.inlineCode": "行内代码",
+        "menu.h1": "标题 1",
+        "menu.h2": "标题 2",
+        "menu.h3": "标题 3",
+        "menu.body": "正文",
+        "menu.bulletList": "项目符号列表",
+        "menu.orderedList": "编号列表",
+        "menu.quote": "引用",
+        "menu.inlineMath": "行内公式",
+        "menu.insertImage": "插入图片…",
+        "menu.insertMermaid": "插入 Mermaid 图",
+        "menu.insertTable": "插入表格",
+        "menu.insertHR": "插入分隔线",
+        // 视图
+        "menu.view": "视图",
+        "menu.nextTab": "下一个标签页",
+        "menu.prevTab": "上一个标签页",
+        "menu.tab": "标签页 {n}",
+        "menu.wysiwyg": "所见即所得",
+        "menu.source": "Markdown 源码",
+        "menu.split": "分栏（源码 + 预览）",
+        "menu.zoomIn": "放大",
+        "menu.zoomOut": "缩小",
+        "menu.zoomReset": "实际大小",
+        "menu.sidebar": "侧边栏",
+        "menu.fullscreen": "全屏",
+        // 主题
+        "menu.theme": "主题",
+        "menu.themeSystem": "跟随系统",
+        "menu.themeLight": "浅色",
+        "menu.themeDark": "深色",
+        // 窗口 / 帮助
+        "menu.window": "窗口",
+        "menu.minimize": "最小化",
+        "menu.zoomWindow": "缩放",
+        "menu.bringAllToFront": "前置全部窗口",
+        "menu.help": "帮助",
+        "menu.cheatsheet": "Markdown 语法速查",
+        // 窗口标题 / 状态
+        "title.docs": "[{n} 个文档] ",
+        "title.unsaved": " — 未保存",
+        "title.modified": "已修改",
+        // 对话框
+        "dialog.openTitle": "打开 Markdown 文件",
+        "dialog.saveTitle": "保存 Markdown",
+        "dialog.exportTitle": "导出为 {ext}",
+        "dialog.untitled": "未命名",
+        // 退出确认
+        "alert.unsavedTitle": "有未保存的文档",
+        "alert.unsavedBody": "关闭 MD Writer 会丢失未保存的修改。",
+        "alert.saveAll": "保存全部",
+        "alert.dontSave": "不保存",
+        "alert.cancel": "取消",
+        // 错误提示
+        "err.saveFailed": "保存失败：{msg}",
+        "err.exportFailed": "导出失败：{msg}",
+        "err.pdfFailed": "导出 PDF 失败：{msg}",
+    ]
+
+    // MARK: 词典：English
+
+    static let en: [String: String] = [
+        "menu.about": "About MD Writer",
+        "menu.preferences": "Preferences…",
+        "menu.hide": "Hide MD Writer",
+        "menu.quit": "Quit MD Writer",
+
+        "menu.file": "File",
+        "menu.newTab": "New Tab",
+        "menu.open": "Open…",
+        "menu.openRecent": "Open Recent",
+        "menu.clearRecent": "Clear Menu",
+        "menu.closeTab": "Close Tab",
+        "menu.closeOtherTabs": "Close Other Tabs",
+        "menu.save": "Save",
+        "menu.saveAs": "Save As…",
+        "menu.exportHTML": "Export as HTML…",
+        "menu.exportPDF": "Export as PDF…",
+        "menu.exportWord": "Export as Word…",
+        "menu.exportPNG": "Export as Long PNG…",
+        "menu.print": "Print…",
+        "recent.empty": "(No recent files)",
+
+        "menu.edit": "Edit",
+        "menu.undo": "Undo",
+        "menu.redo": "Redo",
+        "menu.cut": "Cut",
+        "menu.copy": "Copy",
+        "menu.paste": "Paste",
+        "menu.pastePlain": "Paste as Plain Text",
+        "menu.selectAll": "Select All",
+        "menu.find": "Find…",
+
+        "menu.format": "Format",
+        "menu.bold": "Bold",
+        "menu.italic": "Italic",
+        "menu.underline": "Underline",
+        "menu.inlineCode": "Inline Code",
+        "menu.h1": "Heading 1",
+        "menu.h2": "Heading 2",
+        "menu.h3": "Heading 3",
+        "menu.body": "Body",
+        "menu.bulletList": "Bullet List",
+        "menu.orderedList": "Numbered List",
+        "menu.quote": "Quote",
+        "menu.inlineMath": "Inline Formula",
+        "menu.insertImage": "Insert Image…",
+        "menu.insertMermaid": "Insert Mermaid Diagram",
+        "menu.insertTable": "Insert Table",
+        "menu.insertHR": "Insert Divider",
+
+        "menu.view": "View",
+        "menu.nextTab": "Next Tab",
+        "menu.prevTab": "Previous Tab",
+        "menu.tab": "Tab {n}",
+        "menu.wysiwyg": "Rich Text",
+        "menu.source": "Markdown Source",
+        "menu.split": "Split (Source + Preview)",
+        "menu.zoomIn": "Zoom In",
+        "menu.zoomOut": "Zoom Out",
+        "menu.zoomReset": "Actual Size",
+        "menu.sidebar": "Sidebar",
+        "menu.fullscreen": "Fullscreen",
+
+        "menu.theme": "Theme",
+        "menu.themeSystem": "Follow System",
+        "menu.themeLight": "Light",
+        "menu.themeDark": "Dark",
+
+        "menu.window": "Window",
+        "menu.minimize": "Minimize",
+        "menu.zoomWindow": "Zoom",
+        "menu.bringAllToFront": "Bring All to Front",
+        "menu.help": "Help",
+        "menu.cheatsheet": "Markdown Cheatsheet",
+
+        "title.docs": "[{n} docs] ",
+        "title.unsaved": " — Unsaved",
+        "title.modified": "Modified",
+
+        "dialog.openTitle": "Open Markdown File",
+        "dialog.saveTitle": "Save Markdown",
+        "dialog.exportTitle": "Export as {ext}",
+        "dialog.untitled": "Untitled",
+
+        "alert.unsavedTitle": "You have unsaved documents",
+        "alert.unsavedBody": "Closing MD Writer will discard unsaved changes.",
+        "alert.saveAll": "Save All",
+        "alert.dontSave": "Don’t Save",
+        "alert.cancel": "Cancel",
+
+        "err.saveFailed": "Save failed: {msg}",
+        "err.exportFailed": "Export failed: {msg}",
+        "err.pdfFailed": "PDF export failed: {msg}",
+    ]
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     var window: NSWindow!
@@ -31,6 +268,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: 生命周期
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 启动日志：确认语言偏好真的生效了（菜单语言不对时先看这一行）
+        print("[MDWriter] language=\(L10n.current) "
+              + "file=\(L10n.tr("menu.file")) save=\(L10n.tr("menu.save")) quit=\(L10n.tr("menu.quit"))")
+        // 显式 flush：GUI App 的 stdout 走管道时是块缓冲，
+        // 进程被信号终止时缓冲区会丢，日志就空了
+        fflush(stdout)
+
+        // --print-lang[=xx]：打印当前语言后退出，不建窗口。
+        // 给脚本 / CI 用，也是排查"菜单为什么还是中文"的第一手段。
+        // 带 =xx 时临时按该语言输出（不写偏好），便于直接对比中英词典。
+        if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--print-lang") }) {
+            if let eq = arg.firstIndex(of: "=") {
+                L10n.force(String(arg[arg.index(after: eq)...])
+                    .trimmingCharacters(in: .whitespaces))
+            }
+            fputs("lang=\(L10n.current)\n"
+                  + "file=\(L10n.tr("menu.file"))\n"
+                  + "save=\(L10n.tr("menu.save"))\n"
+                  + "quit=\(L10n.tr("menu.quit"))\n", stdout)
+            fflush(stdout)
+            exit(0)
+        }
+
         buildMainMenu()
         buildWindow()
         NSApp.activate(ignoringOtherApps: true)
@@ -60,11 +320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             let alert = NSAlert()
-            alert.messageText = "有未保存的文档"
-            alert.informativeText = "关闭 MD Writer 会丢失未保存的修改。"
-            alert.addButton(withTitle: "保存全部")
-            alert.addButton(withTitle: "不保存")
-            alert.addButton(withTitle: "取消")
+            alert.messageText = L10n.tr("alert.unsavedTitle")
+            alert.informativeText = L10n.tr("alert.unsavedBody")
+            alert.addButton(withTitle: L10n.tr("alert.saveAll"))
+            alert.addButton(withTitle: L10n.tr("alert.dontSave"))
+            alert.addButton(withTitle: L10n.tr("alert.cancel"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 self.callJS("saveAll", [:])
@@ -127,6 +387,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
 
         let userContent = WKUserContentController()
+        // 在页面自己的脚本之前注入语言：前端 boot 时同步就能读到，
+        // 不会先按默认语言渲染一遍再跳变
+        userContent.addUserScript(WKUserScript(
+            source: "window.__MD_LANG__ = \"\(L10n.current)\";",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         config.userContentController = userContentControllerProxy(userContent)
 
         webView = WKWebView(frame: .zero, configuration: config)
@@ -190,9 +457,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let title = payload["title"] as? String ?? ""
             let dirty = payload["dirty"] as? Bool ?? false
             let tabCount = payload["tabCount"] as? Int ?? 1
-            let prefix = tabCount > 1 ? "[\(tabCount) 个文档] " : ""
-            window.title = dirty ? "\(prefix)\(title) — 未保存" : "\(prefix)\(title)"
-            window.subtitle = dirty ? "已修改" : ""
+            let prefix = tabCount > 1 ? L10n.tr("title.docs", ["n": "\(tabCount)"]) : ""
+            window.title = dirty ? "\(prefix)\(title)\(L10n.tr("title.unsaved"))" : "\(prefix)\(title)"
+            window.subtitle = dirty ? L10n.tr("title.modified") : ""
             window.isDocumentEdited = dirty
         case "asset.save":
             saveAsset(payload)
@@ -210,6 +477,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let r = String(describing: result ?? "nil")
                 let e = error?.localizedDescription ?? "nil"
                 print("[eval] result=\(r.prefix(400)) error=\(e)")
+            }
+        case "setLanguage":
+            // 前端切换语言 -> 存偏好并重建菜单（菜单是启动时一次性构建的）
+            if let lang = payload["lang"] as? String {
+                L10n.preference = lang
+                buildMainMenu()
             }
         case "focusEditor":
             window.makeKeyAndOrderFront(nil)
@@ -245,7 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentOpenPanel() {
         let panel = NSOpenPanel()
-        panel.title = "打开 Markdown 文件"
+        panel.title = L10n.tr("dialog.openTitle")
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = Self.markdownTypes
@@ -297,9 +570,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func saveMarkdownAs(_ payload: [String: Any]) {
         let content = payload["content"] as? String ?? ""
         let tabId = payload["tabId"] as? String ?? ""
-        let suggested = (payload["name"] as? String ?? "未命名").replacingOccurrences(of: ".md", with: "")
+        let suggested = (payload["name"] as? String ?? L10n.tr("dialog.untitled")).replacingOccurrences(of: ".md", with: "")
         let panel = NSSavePanel()
-        panel.title = "保存 Markdown"
+        panel.title = L10n.tr("dialog.saveTitle")
         panel.nameFieldStringValue = suggested + ".md"
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         panel.beginSheetModal(for: window) { [weak self] resp in
@@ -321,7 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try content.write(toFile: path, atomically: true, encoding: .utf8)
         } catch {
-            showToast("保存失败：\(error.localizedDescription)", kind: "error")
+            showToast(L10n.tr("err.saveFailed", ["msg": error.localizedDescription]), kind: "error")
         }
     }
 
@@ -333,7 +606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !dataString.isEmpty, let data = Data(base64Encoded: dataString) else { return }
 
         let panel = NSSavePanel()
-        panel.title = "导出为 \(payload["ext"] as? String ?? "文件")"
+        panel.title = L10n.tr("dialog.exportTitle", ["ext": payload["ext"] as? String ?? "file"])
         panel.nameFieldStringValue = suggestedName
         if let ext = payload["ext"] as? String, let ut = UTType(filenameExtension: ext) {
             panel.allowedContentTypes = [ut]
@@ -344,7 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try data.write(to: url)
                 self.callJS("exportDone", ["path": url.path, "name": url.lastPathComponent])
             } catch {
-                self.showToast("导出失败：\(error.localizedDescription)", kind: "error")
+                self.showToast(L10n.tr("err.exportFailed", ["msg": error.localizedDescription]), kind: "error")
             }
         }
     }
@@ -427,7 +700,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func printHTML(_ html: String) {
         guard !html.isEmpty else { return }
         let printer = PrintWebViewController(html: html, onError: { [weak self] msg in
-            self?.callJS("nativeToast", ["text": "导出 PDF 失败：\(msg)", "kind": "error"])
+            self?.callJS("nativeToast", ["text": L10n.tr("err.pdfFailed", ["msg": msg]), "kind": "error"])
         })
         printer.present(from: window)
     }
@@ -475,116 +748,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // --- MD Writer ---
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 MD Writer", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: L10n.tr("menu.about"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "偏好设置…", action: #selector(openPreferences), keyEquivalent: ",")
+        appMenu.addItem(withTitle: L10n.tr("menu.preferences"), action: #selector(openPreferences), keyEquivalent: ",")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 MD Writer", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: L10n.tr("menu.hide"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 MD Writer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L10n.tr("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 
         // --- 文件 ---
         let fileItem = NSMenuItem()
-        let fileMenu = NSMenu(title: "文件")
-        fileMenu.addItem(item("新建标签页", #selector(newDoc), "n"))
-        fileMenu.addItem(item("打开…", #selector(openDoc), "o"))
+        let fileMenu = NSMenu(title: L10n.tr("menu.file"))
+        fileMenu.addItem(item(L10n.tr("menu.newTab"), #selector(newDoc), "n"))
+        fileMenu.addItem(item(L10n.tr("menu.open"), #selector(openDoc), "o"))
         // 打开最近：动态加载 UserDefaults 里的最近文件列表
-        self.recentMenu = NSMenu(title: "打开最近")
+        self.recentMenu = NSMenu(title: L10n.tr("menu.openRecent"))
         rebuildRecentMenu()
-        let recentItem = NSMenuItem(title: "打开最近", action: nil, keyEquivalent: "")
+        let recentItem = NSMenuItem(title: L10n.tr("menu.openRecent"), action: nil, keyEquivalent: "")
         recentItem.submenu = recentMenu
         fileMenu.addItem(recentItem)
-        fileMenu.addItem(item("清空最近文件", #selector(clearRecentFiles), ""))
+        fileMenu.addItem(item(L10n.tr("menu.clearRecent"), #selector(clearRecentFiles), ""))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(item("关闭标签页", #selector(closeTab), "w"))
-        fileMenu.addItem(item("关闭其他标签页", #selector(closeOtherTabs), "w", [.option, .command, .shift]))
+        fileMenu.addItem(item(L10n.tr("menu.closeTab"), #selector(closeTab), "w"))
+        fileMenu.addItem(item(L10n.tr("menu.closeOtherTabs"), #selector(closeOtherTabs), "w", [.option, .command, .shift]))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(item("保存", #selector(saveDoc), "s"))
-        fileMenu.addItem(item("另存为…", #selector(saveDocAs), "s", [.shift, .command]))
+        fileMenu.addItem(item(L10n.tr("menu.save"), #selector(saveDoc), "s"))
+        fileMenu.addItem(item(L10n.tr("menu.saveAs"), #selector(saveDocAs), "s", [.shift, .command]))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(item("导出为 HTML…", #selector(exportHTML), "e", [.shift, .command]))
-        fileMenu.addItem(item("导出为 PDF…", #selector(exportPDF), "e", [.option, .command]))
-        fileMenu.addItem(item("导出为 Word…", #selector(exportDOCX), "e", [.option, .command]))
-        fileMenu.addItem(item("导出为 PNG 长图…", #selector(exportPNG), "e", [.control, .command]))
+        fileMenu.addItem(item(L10n.tr("menu.exportHTML"), #selector(exportHTML), "e", [.shift, .command]))
+        fileMenu.addItem(item(L10n.tr("menu.exportPDF"), #selector(exportPDF), "e", [.option, .command]))
+        fileMenu.addItem(item(L10n.tr("menu.exportWord"), #selector(exportDOCX), "e", [.option, .command]))
+        fileMenu.addItem(item(L10n.tr("menu.exportPNG"), #selector(exportPNG), "e", [.control, .command]))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(item("打印…", #selector(printDoc), "p", [.command, .shift]))
+        fileMenu.addItem(item(L10n.tr("menu.print"), #selector(printDoc), "p", [.command, .shift]))
         fileItem.submenu = fileMenu
         mainMenu.addItem(fileItem)
 
         // --- 编辑 ---
         let editItem = NSMenuItem()
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(item("撤销", #selector(undoWeb), "z", [.command]))
-        editMenu.addItem(item("重做", #selector(redoWeb), "z", [.command, .shift]))
+        let editMenu = NSMenu(title: L10n.tr("menu.edit"))
+        editMenu.addItem(item(L10n.tr("menu.undo"), #selector(undoWeb), "z", [.command]))
+        editMenu.addItem(item(L10n.tr("menu.redo"), #selector(redoWeb), "z", [.command, .shift]))
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(item("粘贴为纯文本", #selector(pastePlain), "v", [.shift, .command]))
+        editMenu.addItem(withTitle: L10n.tr("menu.cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L10n.tr("menu.copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L10n.tr("menu.paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(item(L10n.tr("menu.pastePlain"), #selector(pastePlain), "v", [.shift, .command]))
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editMenu.addItem(item("查找…", #selector(findText), "f"))
+        editMenu.addItem(withTitle: L10n.tr("menu.selectAll"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(item(L10n.tr("menu.find"), #selector(findText), "f"))
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
 
         // --- 格式 ---
         let fmtItem = NSMenuItem()
-        let fmtMenu = NSMenu(title: "格式")
-        fmtMenu.addItem(item("粗体", #selector(toggleBold), "b"))
-        fmtMenu.addItem(item("斜体", #selector(toggleItalic), "i"))
-        fmtMenu.addItem(item("下划线", #selector(toggleUnderline), "u"))
-        fmtMenu.addItem(item("行内代码", #selector(toggleInlineCode), "e", [.command, .shift]))
+        let fmtMenu = NSMenu(title: L10n.tr("menu.format"))
+        fmtMenu.addItem(item(L10n.tr("menu.bold"), #selector(toggleBold), "b"))
+        fmtMenu.addItem(item(L10n.tr("menu.italic"), #selector(toggleItalic), "i"))
+        fmtMenu.addItem(item(L10n.tr("menu.underline"), #selector(toggleUnderline), "u"))
+        fmtMenu.addItem(item(L10n.tr("menu.inlineCode"), #selector(toggleInlineCode), "e", [.command, .shift]))
         fmtMenu.addItem(.separator())
-        fmtMenu.addItem(item("标题 1", #selector(h1), "1", [.command, .option]))
-        fmtMenu.addItem(item("标题 2", #selector(h2), "2", [.command, .option]))
-        fmtMenu.addItem(item("标题 3", #selector(h3), "3", [.command, .option]))
-        fmtMenu.addItem(item("正文", #selector(para), "0", [.command, .option]))
+        fmtMenu.addItem(item(L10n.tr("menu.h1"), #selector(h1), "1", [.command, .option]))
+        fmtMenu.addItem(item(L10n.tr("menu.h2"), #selector(h2), "2", [.command, .option]))
+        fmtMenu.addItem(item(L10n.tr("menu.h3"), #selector(h3), "3", [.command, .option]))
+        fmtMenu.addItem(item(L10n.tr("menu.body"), #selector(para), "0", [.command, .option]))
         fmtMenu.addItem(.separator())
-        fmtMenu.addItem(item("项目符号列表", #selector(bulletList), "l", [.command, .shift]))
-        fmtMenu.addItem(item("编号列表", #selector(orderedList), "l", [.command, .shift, .option]))
-        fmtMenu.addItem(item("引用", #selector(quoteBlock), "", [.command, .shift, .option]))
-        fmtMenu.addItem(item("行内公式", #selector(inlineMath), "m", [.command, .shift]))
-        fmtMenu.addItem(item("插入图片…", #selector(insertImage), "g", [.command, .shift]))
+        fmtMenu.addItem(item(L10n.tr("menu.bulletList"), #selector(bulletList), "l", [.command, .shift]))
+        fmtMenu.addItem(item(L10n.tr("menu.orderedList"), #selector(orderedList), "l", [.command, .shift, .option]))
+        fmtMenu.addItem(item(L10n.tr("menu.quote"), #selector(quoteBlock), "", [.command, .shift, .option]))
+        fmtMenu.addItem(item(L10n.tr("menu.inlineMath"), #selector(inlineMath), "m", [.command, .shift]))
+        fmtMenu.addItem(item(L10n.tr("menu.insertImage"), #selector(insertImage), "g", [.command, .shift]))
         fmtMenu.addItem(.separator())
-        fmtMenu.addItem(item("插入 Mermaid 图", #selector(insertMermaid), "m", [.command, .option]))
-        fmtMenu.addItem(withTitle: "插入表格", action: #selector(insertTable), keyEquivalent: "")
-        fmtMenu.addItem(withTitle: "插入分隔线", action: #selector(insertHR), keyEquivalent: "")
+        fmtMenu.addItem(item(L10n.tr("menu.insertMermaid"), #selector(insertMermaid), "m", [.command, .option]))
+        fmtMenu.addItem(withTitle: L10n.tr("menu.insertTable"), action: #selector(insertTable), keyEquivalent: "")
+        fmtMenu.addItem(withTitle: L10n.tr("menu.insertHR"), action: #selector(insertHR), keyEquivalent: "")
         fmtItem.submenu = fmtMenu
         mainMenu.addItem(fmtItem)
 
         // --- 视图 ---
         let viewItem = NSMenuItem()
-        let viewMenu = NSMenu(title: "视图")
-        viewMenu.addItem(item("下一个标签页", #selector(nextTab), "]", [.command, .shift]))
-        viewMenu.addItem(item("上一个标签页", #selector(prevTab), "[", [.command, .shift]))
+        let viewMenu = NSMenu(title: L10n.tr("menu.view"))
+        viewMenu.addItem(item(L10n.tr("menu.nextTab"), #selector(nextTab), "]", [.command, .shift]))
+        viewMenu.addItem(item(L10n.tr("menu.prevTab"), #selector(prevTab), "[", [.command, .shift]))
         viewMenu.addItem(.separator())
         // 跳转到第 N 个标签页（⌘1…⌘9）
         for n in 1...9 {
-            let mi = NSMenuItem(title: "标签页 \(n)", action: #selector(selectTab(_:)), keyEquivalent: "\(n)")
+            let mi = NSMenuItem(title: L10n.tr("menu.tab", ["n": "\(n)"]), action: #selector(selectTab(_:)), keyEquivalent: "\(n)")
             mi.keyEquivalentModifierMask = [.command]
             mi.tag = n
             viewMenu.addItem(mi)
         }
         viewMenu.addItem(.separator())
-        viewMenu.addItem(item("所见即所得", #selector(modeWYSIWYG), "1", [.command, .option]))
-        viewMenu.addItem(item("Markdown 源码", #selector(modeSource), "2", [.command, .option]))
-        viewMenu.addItem(item("分栏（源码 + 预览）", #selector(modeSplit), "3", [.command, .option]))
+        viewMenu.addItem(item(L10n.tr("menu.wysiwyg"), #selector(modeWYSIWYG), "1", [.command, .option]))
+        viewMenu.addItem(item(L10n.tr("menu.source"), #selector(modeSource), "2", [.command, .option]))
+        viewMenu.addItem(item(L10n.tr("menu.split"), #selector(modeSplit), "3", [.command, .option]))
         viewMenu.addItem(.separator())
-        viewMenu.addItem(item("放大", #selector(zoomIn), "=", [.command]))
-        viewMenu.addItem(item("缩小", #selector(zoomOutSel), "-", [.command]))
-        viewMenu.addItem(item("实际大小", #selector(zoomReset), "0", [.command]))
+        viewMenu.addItem(item(L10n.tr("menu.zoomIn"), #selector(zoomIn), "=", [.command]))
+        viewMenu.addItem(item(L10n.tr("menu.zoomOut"), #selector(zoomOutSel), "-", [.command]))
+        viewMenu.addItem(item(L10n.tr("menu.zoomReset"), #selector(zoomReset), "0", [.command]))
         viewMenu.addItem(.separator())
-        viewMenu.addItem(item("侧边栏", #selector(toggleSidebar), "s", [.control, .command]))
-        viewMenu.addItem(item("全屏", #selector(toggleFullscreen), "f", [.control, .command]))
+        viewMenu.addItem(item(L10n.tr("menu.sidebar"), #selector(toggleSidebar), "s", [.control, .command]))
+        viewMenu.addItem(item(L10n.tr("menu.fullscreen"), #selector(toggleFullscreen), "f", [.control, .command]))
         viewItem.submenu = viewMenu
         mainMenu.addItem(viewItem)
 
         // --- 主题 ---
         let themeItem = NSMenuItem()
-        let themeMenu = NSMenu(title: "主题")
-        for (name, cmd) in [("跟随系统", #selector(themeSystem)), ("浅色", #selector(themeLight)), ("深色", #selector(themeDark))] {
+        let themeMenu = NSMenu(title: L10n.tr("menu.theme"))
+        for (name, cmd) in [
+            (L10n.tr("menu.themeSystem"), #selector(themeSystem)),
+            (L10n.tr("menu.themeLight"), #selector(themeLight)),
+            (L10n.tr("menu.themeDark"), #selector(themeDark)),
+        ] {
             themeMenu.addItem(withTitle: name, action: cmd, keyEquivalent: "")
         }
         themeItem.submenu = themeMenu
@@ -592,17 +869,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // --- 窗口 & 帮助 ---
         let winItem = NSMenuItem()
-        let winMenu = NSMenu(title: "窗口")
-        winMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        winMenu.addItem(withTitle: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        let winMenu = NSMenu(title: L10n.tr("menu.window"))
+        winMenu.addItem(withTitle: L10n.tr("menu.minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        winMenu.addItem(withTitle: L10n.tr("menu.zoomWindow"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         winMenu.addItem(.separator())
-        winMenu.addItem(withTitle: "前置全部窗口", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        winMenu.addItem(withTitle: L10n.tr("menu.bringAllToFront"), action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         winItem.submenu = winMenu
         mainMenu.addItem(winItem)
 
         let helpItem = NSMenuItem()
-        let helpMenu = NSMenu(title: "帮助")
-        helpMenu.addItem(withTitle: "Markdown 语法速查", action: #selector(showHelp), keyEquivalent: "/")
+        let helpMenu = NSMenu(title: L10n.tr("menu.help"))
+        helpMenu.addItem(withTitle: L10n.tr("menu.cheatsheet"), action: #selector(showHelp), keyEquivalent: "/")
         helpItem.submenu = helpMenu
         mainMenu.addItem(helpItem)
 
@@ -648,7 +925,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.removeAllItems()
         let list = UserDefaults.standard.stringArray(forKey: recentFilesKey) ?? []
         if list.isEmpty {
-            let empty = NSMenuItem(title: "（无最近文件）", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: L10n.tr("recent.empty"), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
             return

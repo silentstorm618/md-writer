@@ -6,6 +6,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
 import katex from 'katex';
+import { t as tr } from './i18n.js';
 
 /* ---------- 工具 ---------- */
 
@@ -40,7 +41,7 @@ function protectMath(text) {
     try {
       return put(katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }));
     } catch {
-      return put(`<pre class="md-math-error">公式错误：${escapeHtml(expr)}</pre>`);
+      return put(`<pre class="md-math-error">${tr('render.mathError', { expr: escapeHtml(expr) })}</pre>`);
     }
   });
 
@@ -213,7 +214,7 @@ export async function renderMermaidIn(container) {
     } catch (e) {
       node.classList.add('md-mermaid-error');
       node.innerHTML = `<pre class="md-mermaid-src">${escapeHtml(code)}</pre>
-        <div class="md-mermaid-tip">Mermaid 语法有误：${escapeHtml(e.message || '')}</div>`;
+        <div class="md-mermaid-tip">${tr('render.mermaidError', { msg: escapeHtml(e.message || '') })}</div>`;
     }
   }
 }

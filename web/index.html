@@ -735,84 +735,92 @@ body.show-inspector .inspector { transform: translateX(0); }
   <div id="toolbar">
     <div class="seg" role="tablist">
       <button data-mode-btn="wysiwyg" data-cmd="mode" data-value="wysiwyg" class="active"
-              title="所见即所得 ⌥⌘1">所见即所得</button>
+              data-i18n-title="toolbar.mode.wysiwyg.title"
+              data-i18n="toolbar.mode.wysiwyg">所见即所得</button>
       <button data-mode-btn="source" data-cmd="mode" data-value="source"
-              title="Markdown 源码 ⌥⌘2">源码</button>
+              data-i18n-title="toolbar.mode.source.title"
+              data-i18n="toolbar.mode.source">源码</button>
       <button data-mode-btn="split" data-cmd="mode" data-value="split"
-              title="分栏 ⌥⌘3">分栏</button>
+              data-i18n-title="toolbar.mode.split.title"
+              data-i18n="toolbar.mode.split">分栏</button>
     </div>
 
     <div class="tb-sep"></div>
 
     <div class="tb-group">
-      <button class="tb-btn" data-cmd="newDoc" title="新建标签页 ⌘N">＋ 新建</button>
+      <button class="tb-btn" data-cmd="newDoc"
+              data-i18n-title="toolbar.new.title"
+              data-i18n="toolbar.new">＋ 新建</button>
     </div>
 
     <div class="tb-group">
-      <button class="tb-btn" data-cmd="h1" title="一级标题">H1</button>
-      <button class="tb-btn" data-cmd="h2" title="二级标题">H2</button>
-      <button class="tb-btn" data-cmd="h3" title="三级标题">H3</button>
-      <button class="tb-btn" data-cmd="p" title="正文">正文</button>
-    </div>
-
-    <div class="tb-sep"></div>
-
-    <div class="tb-group">
-      <button class="tb-btn" data-cmd="bold" title="粗体 ⌘B"><b>B</b></button>
-      <button class="tb-btn" data-cmd="italic" title="斜体 ⌘I"><i>I</i></button>
-      <button class="tb-btn" data-cmd="underline" title="下划线 ⌘U"><u>U</u></button>
-      <button class="tb-btn" data-cmd="code" title="行内代码 ⌘⇧`">‹›</button>
+      <button class="tb-btn" data-cmd="h1" data-i18n-title="toolbar.h1.title">H1</button>
+      <button class="tb-btn" data-cmd="h2" data-i18n-title="toolbar.h2.title">H2</button>
+      <button class="tb-btn" data-cmd="h3" data-i18n-title="toolbar.h3.title">H3</button>
+      <button class="tb-btn" data-cmd="p"
+              data-i18n-title="toolbar.p.title" data-i18n="toolbar.p">正文</button>
     </div>
 
     <div class="tb-sep"></div>
 
     <div class="tb-group">
-      <button class="tb-btn" data-cmd="ul" title="项目符号">•—</button>
-      <button class="tb-btn" data-cmd="ol" title="编号列表">1.</button>
-      <button class="tb-btn" data-cmd="quote" title="引用">❝</button>
-      <button class="tb-btn" data-cmd="hr" title="分隔线">—</button>
+      <button class="tb-btn" data-cmd="bold" data-i18n-title="toolbar.bold.title"><b>B</b></button>
+      <button class="tb-btn" data-cmd="italic" data-i18n-title="toolbar.italic.title"><i>I</i></button>
+      <button class="tb-btn" data-cmd="underline" data-i18n-title="toolbar.underline.title"><u>U</u></button>
+      <button class="tb-btn" data-cmd="code" data-i18n-title="toolbar.code.title">‹›</button>
     </div>
 
     <div class="tb-sep"></div>
 
     <div class="tb-group">
-      <button class="tb-btn" data-cmd="table" title="插入表格">⊞</button>
-      <button class="tb-btn" data-cmd="mermaid" title="Mermaid 流程图">◈</button>
-      <button class="tb-btn" data-cmd="math" title="公式">∑</button>
+      <button class="tb-btn" data-cmd="ul" data-i18n-title="toolbar.ul.title">•—</button>
+      <button class="tb-btn" data-cmd="ol" data-i18n-title="toolbar.ol.title">1.</button>
+      <button class="tb-btn" data-cmd="quote" data-i18n-title="toolbar.quote.title">❝</button>
+      <button class="tb-btn" data-cmd="hr" data-i18n-title="toolbar.hr.title">—</button>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tb-group">
+      <button class="tb-btn" data-cmd="table" data-i18n-title="toolbar.table.title">⊞</button>
+      <button class="tb-btn" data-cmd="mermaid" data-i18n-title="toolbar.mermaid.title">◈</button>
+      <button class="tb-btn" data-cmd="math" data-i18n-title="toolbar.math.title">∑</button>
     </div>
 
     <div class="spacer"></div>
 
     <div class="tb-group">
-      <button class="tb-btn" data-cmd="zoom" data-delta="-1" title="缩小">−</button>
+      <button class="tb-btn" data-cmd="zoom" data-delta="-1" data-i18n-title="toolbar.zoomOut.title">−</button>
       <span class="zoom-label" id="zoom-label">100%</span>
-      <button class="tb-btn" data-cmd="zoom" data-delta="1" title="放大">＋</button>
+      <button class="tb-btn" data-cmd="zoom" data-delta="1" data-i18n-title="toolbar.zoomIn.title">＋</button>
     </div>
 
     <div class="tb-sep"></div>
 
     <div class="tb-group">
-      <button class="tb-btn" data-cmd="export" data-value="md" title="导出 Markdown">MD</button>
-      <button class="tb-btn" data-cmd="export" data-value="html" title="导出 HTML">HTML</button>
-      <button class="tb-btn" data-cmd="export" data-value="pdf" title="导出 PDF">PDF</button>
-      <button class="tb-btn" data-cmd="export" data-value="docx" title="导出 Word">DOCX</button>
-      <button class="tb-btn" data-cmd="export" data-value="png" title="导出 PNG 长图">PNG</button>
+      <button class="tb-btn" data-cmd="export" data-value="md" data-i18n-title="toolbar.export.md.title">MD</button>
+      <button class="tb-btn" data-cmd="export" data-value="html" data-i18n-title="toolbar.export.html.title">HTML</button>
+      <button class="tb-btn" data-cmd="export" data-value="pdf" data-i18n-title="toolbar.export.pdf.title">PDF</button>
+      <button class="tb-btn" data-cmd="export" data-value="docx" data-i18n-title="toolbar.export.docx.title">DOCX</button>
+      <button class="tb-btn" data-cmd="export" data-value="png" data-i18n-title="toolbar.export.png.title">PNG</button>
     </div>
 
     <div class="tb-sep"></div>
 
     <span class="save-state" id="save-state">已保存</span>
-    <button class="tb-btn" data-cmd="sidebar" title="侧边栏 ⌃⌘S">☰</button>
+    <button class="tb-btn" data-cmd="sidebar" data-i18n-title="toolbar.sidebar.title">☰</button>
   </div>
 
   <!-- Tab 栏 -->
-  <div id="tab-bar" role="tablist" aria-label="文档标签"></div>
+  <div id="tab-bar" role="tablist" data-i18n-aria="tabbar.aria"></div>
 
   <!-- 侧边栏 -->
-  <aside id="sidebar" aria-label="侧边栏">
-    <div id="side-tabs" role="tablist" aria-label="侧边栏视图">
-      <button data-library="toc" class="active" role="tab" aria-selected="true">目录</button>
-      <button data-library="images" role="tab" aria-selected="false">图片</button>
+  <aside id="sidebar" data-i18n-aria="sidebar.aria">
+    <div id="side-tabs" role="tablist" data-i18n-aria="sidebar.tabs.aria">
+      <button data-library="toc" class="active" role="tab" aria-selected="true"
+              data-i18n="sidebar.toc">目录</button>
+      <button data-library="images" role="tab" aria-selected="false"
+              data-i18n="sidebar.images">图片</button>
     </div>
     <div id="sidebar-body" role="tabpanel"></div>
   </aside>
@@ -842,35 +850,37 @@ body.show-inspector .inspector { transform: translateX(0); }
     <span id="cursor-pos" class="cursor-pos">行 1，列 1</span>
     <span id="tab-dirty-count" class="status-dirty"></span>
     <span class="spacer"></span>
-    <span class="status-hint"><kbd>⌘N</kbd>新建 <kbd>⌘O</kbd>打开 <kbd>⌘W</kbd>关标签 <kbd>⌘1-9</kbd>切换</span>
+    <span class="status-hint" data-i18n-html="status.hint"><kbd>⌘N</kbd>新建 <kbd>⌘O</kbd>打开 <kbd>⌘W</kbd>关标签 <kbd>⌘1-9</kbd>切换</span>
   </div>
 </div>
 
 <!-- 右侧检视器：主题 / 字体 -->
 <aside class="inspector">
   <div class="insp-section">
-    <div class="insp-title">导出主题</div>
+    <div class="insp-title" data-i18n="insp.exportTheme">导出主题</div>
     <div id="theme-cards"></div>
   </div>
 
   <div class="insp-section">
-    <div class="insp-title">字体</div>
+    <div class="insp-title" data-i18n="insp.font">字体</div>
     <div class="insp-row">
-      <label>字体族</label>
+      <label data-i18n="insp.fontFamily">字体族</label>
       <select id="font-select"></select>
     </div>
     <div class="insp-row">
-      <label>字号</label>
+      <label data-i18n="insp.fontSize">字号</label>
       <select id="size-select"></select>
     </div>
   </div>
 
   <div class="insp-section">
-    <div class="insp-title">选项</div>
-    <label class="insp-toggle"><input type="checkbox" id="opt-toc"> 预览显示目录</label>
-    <label class="insp-toggle"><input type="checkbox" id="opt-zoom"> 跟随系统字号</label>
+    <div class="insp-title" data-i18n="insp.options">选项</div>
+    <label class="insp-toggle"><input type="checkbox" id="opt-toc">
+      <span data-i18n="insp.showToc">预览显示目录</span></label>
+    <label class="insp-toggle"><input type="checkbox" id="opt-zoom">
+      <span data-i18n="insp.followSystemFont">跟随系统字号</span></label>
     <div class="insp-row">
-      <label>目录深度</label>
+      <label data-i18n="insp.tocDepth">目录深度</label>
       <select id="toc-depth-select">
         <option value="1">H1</option>
         <option value="2">H1-H2</option>
@@ -880,15 +890,16 @@ body.show-inspector .inspector { transform: translateX(0); }
         <option value="6">H1-H6</option>
       </select>
     </div>
+    <div class="insp-row">
+      <label data-i18n="insp.language">界面语言</label>
+      <select id="lang-select"></select>
+    </div>
   </div>
 
   <div class="insp-section">
-    <div class="insp-title">关于</div>
-    <div style="font-size:11.5px;color:var(--fg-faint);line-height:1.8">
-      MD Writer 1.0<br>
-      原生 macOS Markdown 编辑器<br>
-      数据全部保存在本地
-    </div>
+    <div class="insp-title" data-i18n="insp.about">关于</div>
+    <div style="font-size:11.5px;color:var(--fg-faint);line-height:1.8"
+         data-i18n-html="insp.about.body">MD Writer 1.0<br>原生 macOS Markdown 编辑器<br>数据全部保存在本地</div>
   </div>
 </aside>
 

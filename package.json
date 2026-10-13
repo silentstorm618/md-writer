@@ -22,7 +22,8 @@
     "verify:sign": "python3 build/notarize.py --check",
     "selftest": "node build/selftest.mjs",
     "selftest:dom": "node build/selftest-dom.mjs",
-    "test": "npm run selftest && npm run selftest:dom",
+    "selftest:i18n": "node build/selftest-i18n.mjs",
+    "test": "npm run selftest && npm run selftest:dom && npm run selftest:i18n",
     "run": "./native/MDWriter.app/Contents/MacOS/MDWriter",
     "clean": "rm -rf build/MDWriter native/MDWriter.app/Contents/Resources/web"
   },
