@@ -199,6 +199,78 @@ const codes = blocks.filter((b) => b.type === 'code');
 check('Mermaid 识别为 lang=mermaid', codes[0]?.lang === 'mermaid');
 check('Python 识别为 lang=python', codes[1]?.lang === 'python');
 
+/* ============ 8. 安全回归：sanitizeUrl + DOMPurify 实际配置 ============ */
+lines.push('\n[8] 安全回归（sanitizeUrl / DOMPurify 白名单）');
+const { sanitizeUrl } = await import('../web/src/core/renderer.js');
+const urlCases = [
+  ['javascript:alert(1)', '#'],
+  ['JavaScript:alert(1)', '#'],
+  ['vbscript:msgbox(1)', '#'],
+  ['data:text/html,<script>', '#'],
+  ['data:image/svg+xml,<svg onload=alert(1)>', '#'],
+  ['data:image/png;base64,AAA', 'data:image/png;base64,AAA'],
+  ['file:///etc/passwd', '#'],
+  ['https://a.com/x', 'https://a.com/x'],
+  ['mailto:a@b.com', 'mailto:a@b.com'],
+  ['#anchor', '#anchor'],
+  ['assets/img.png', 'assets/img.png'],
+];
+for (const [input, expected] of urlCases) {
+  check(`sanitizeUrl(${input.slice(0, 36)})`, sanitizeUrl(input) === expected,
+    `得到 ${sanitizeUrl(input)}`);
+}
+
+/* ============ 9. 安全回归：renderMarkdown 实际输出 ============ */
+lines.push('\n[9] renderMarkdown 端到端（恶意 markdown -> 安全 HTML）');
+const xssMd = [
+  '![xss](javascript:alert(1))',
+  '[xss](javascript:alert(1))',
+  '![xss](file:///etc/passwd)',
+  '![xss](vbscript:msgbox)',
+].join('\n\n');
+const rendered = renderMarkdown(xssMd).toLowerCase();
+check('渲染输出不含 javascript:', !rendered.includes('javascript:'));
+check('渲染输出不含 file:', !rendered.includes('file:'));
+check('渲染输出不含 vbscript:', !rendered.includes('vbscript:'));
+check('渲染输出不含 onload', !rendered.includes('onload'));
+check('渲染输出不含 onerror', !rendered.includes('onerror'));
+check('渲染输出不含 <svg', !rendered.includes('<svg'));
+// data:image/png (合法) 仍应被允许 —— 检查白名单没误伤
+const pngMd = '![png](data:image/png;base64,iVBORw0KG)';
+const pngOut = renderMarkdown(pngMd).toLowerCase();
+check('合法 data:image/png 仍允许', pngOut.includes('data:image/png'));
+
+/* ============ 10. 安全回归：编辑器 inlineMd URL 过滤 ============ */
+lines.push('\n[10] 编辑器 inlineMd URL 过滤（所见即所得 XSS）');
+function inlineMdRoundtrip(md) {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const ed = createWYSIWYG(host, {});
+  ed.setMarkdown(md);
+  const html = ed.getHTML();
+  host.remove();
+  return html;
+}
+const editorCases = [
+  // 图片 / 链接的 src / href 走 sanitizeUrl，危险 scheme 应被改成 # 或被净化
+  ['图片 javascript:', '![x](javascript:alert(1))', /src="#"/],
+  ['链接 javascript:', '[x](javascript:alert(1))', /href="#"/],
+  ['图片 file:', '![x](file:///etc/passwd)', /src="#"/],
+  // data:image/svg+xml：含空格的 URL 会让 inlineMd 的解析失败回退到 plain text，
+  // plain text 已经过 escapeHTML，不应残留未转义的 <script>/<svg>/on* 属性（开标签）。
+  ['图片 data:image/svg+xml', '![x](data:image/svg+xml,<svg onload=alert(1)>)', /^(?!.*<script\b)(?!.*<svg\b)(?!.*\bonerror=)/],
+  // 属性注入：markdown 中的双引号应被转义，避免闭合属性
+  ['属性注入 1', '![x" onerror="alert(1)](ok.png)', /"/],
+  ['属性注入 2', '[x" onclick="alert(1)](ok)', /"/],
+  // 合法 URL 仍保留
+  ['合法 https', '[x](https://example.com)', /href="https:\/\/example\.com"/],
+  ['合法 assets', '![x](assets/img.png)', /src="assets\/img\.png"/],
+];
+for (const [name, md, expect] of editorCases) {
+  const got = inlineMdRoundtrip(md);
+  check(`编辑器 ${name}`, expect.test(got), `输出: ${got.slice(0, 90)}`);
+}
+
 console.log(lines.join('\n'));
 console.log('\n' + '='.repeat(50));
 console.log(`DOM 自检：${pass} 通过 / ${fail} 失败 / 共 ${pass + fail} 项`);

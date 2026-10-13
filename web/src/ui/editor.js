@@ -7,7 +7,7 @@
  *  - 序列化用浏览器内置的 execCommand('formatBlock'/'bold'/...)，
  *    HTML -> Markdown 用自己的 DOM 序列化器，产出干净的 Markdown。
  */
-import { slugify } from '../core/renderer.js';
+import { slugify, escapeAttr, sanitizeUrl } from '../core/renderer.js';
 import { t as tr } from '../core/i18n.js';
 
 export function createWYSIWYG(host, opts = {}) {
@@ -371,12 +371,13 @@ export function createWYSIWYG(host, opts = {}) {
     let t = escapeHTML(String(text));
     // 代码
     t = t.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
-    // 图片
+    // 图片 —— src 必须走 sanitizeUrl + escapeAttr，阻断 javascript:/data:/file:
+    // 防止 ![a](x" onerror=…) 这类写法借未转义的双引号闭合属性注入
     t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
-      (_, alt, src, title) => `<img src="${src}" alt="${alt}"${title ? ` title="${title}"` : ''}>`);
-    // 链接
+      (_, alt, src, title) => `<img src="${escapeAttr(sanitizeUrl(src))}" alt="${escapeAttr(alt)}"${title ? ` title="${escapeAttr(title)}"` : ''}>`);
+    // 链接 —— href 同样过滤
     t = t.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
-      (_, label, href, title) => `<a href="${href}"${title ? ` title="${title}"` : ''}>${label}</a>`);
+      (_, label, href, title) => `<a href="${escapeAttr(sanitizeUrl(href))}"${title ? ` title="${escapeAttr(title)}"` : ''}>${label}</a>`);
     // 粗斜体
     t = t.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
     t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -559,13 +560,15 @@ export function createWYSIWYG(host, opts = {}) {
   function insertLink() {
     const sel = window.getSelection();
     const text = sel?.toString() || '';
-    const url = prompt(tr('editor.linkPrompt'), 'https://');
-    if (!url) return;
+    const raw = prompt(tr('editor.linkPrompt'), 'https://');
+    if (!raw) return;
+    // 阻断 javascript: / data: / file: 等危险 scheme，避免 prompt 直接喂出 XSS
+    const url = sanitizeUrl(raw);
     host.focus();
     if (text) {
       document.execCommand('createLink', false, url);
     } else {
-      document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+      document.execCommand('insertHTML', false, `<a href="${escapeAttr(url)}">${escapeAttr(url)}</a>`);
     }
     scheduleChange();
   }

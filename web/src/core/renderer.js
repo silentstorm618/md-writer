@@ -16,9 +16,23 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** 转义 HTML 属性值：除了 & < > 外还要处理 " '，避免属性注入闭合 */
+function escapeAttr(s) {
+  return escapeHtml(s);
+}
+
 function sanitizeUrl(url) {
   const s = String(url || '').trim();
-  if (/^(javascript|vbscript|data:text\/html)/i.test(s)) return '#';
+  // 拦截已知危险 scheme / 子类型：
+  //   javascript: / vbscript:      — 脚本执行
+  //   data:text/html               — 文档可执行脚本
+  //   data:image/svg+xml           — SVG 可内嵌 <script>、onload 等，XSS 入口
+  //   file:                        — 任意本地文件读取，与 allowFileAccessFromFileURLs 串联更危险
+  // 其他 data:image/(png|jpe?g|gif|webp) 仍允许（图片内嵌用 base64 是合理用法）。
+  if (/^(javascript|vbscript):/i.test(s)) return '#';
+  if (/^data:text\/html/i.test(s)) return '#';
+  if (/^data:image\/svg/i.test(s)) return '#';
+  if (/^file:/i.test(s)) return '#';
   return s;
 }
 
@@ -126,7 +140,14 @@ export function slugify(text) {
 
 const PURIFY_CONFIG = {
   ADD_ATTR: ['target', 'rel', 'align', 'loading', 'checked', 'disabled', 'type', 'open', 'id', 'start', 'data-mermaid', 'class'],
-  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|tel:|#|\/|\.|data:image\/|assets\/|file:)/i,
+  // 只放行安全 scheme：https/http(s)、mailto、tel、片段、相对路径（含项目内 assets/）。
+  // 不放行 file:（任意本地文件读取）、data:（DOM 层兜底，data:image/svg+xml 仍有 XSS 风险）。
+  // data:image 仅限 png/jpeg/gif/webp，避免 SVG 通过 data: 进来。
+  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|tel:|#|\/(?!\/)|\.{1,2}\/|assets\/|data:image\/(?:png|jpe?g|gif|webp)[;,])/i,
+  // 显式禁掉 SVG / math：即便 DOMPurify 默认会过滤 onload，标签本身仍可能含
+  // foreignObject / xlink:href 等二次攻击面。我们没有 SVG 用例，直接禁掉最稳。
+  FORBID_TAGS: ['svg', 'math', 'foreignObject'],
+  FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onanimationstart'],
 };
 
 /* ---------- 对外 API ---------- */
@@ -178,7 +199,10 @@ export async function ensureMermaid() {
         mermaid.initialize({
           startOnLoad: false,
           theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'default',
-          securityLevel: 'loose',
+          // strict：禁用 mermaid 渲染产物的 click 与外链脚本能力。
+          // 避免恶意 .md 文件通过 mermaid 语法（节点 click、链接）触发脚本执行
+          // 或在导出的 SVG / PNG 里留下可被二次打开执行的内容。
+          securityLevel: 'strict',
           fontFamily,
         });
         window.__mermaid = mermaid;
@@ -235,4 +259,4 @@ export function stats(md) {
   };
 }
 
-export { escapeHtml, sanitizeUrl };
+export { escapeHtml, escapeAttr, sanitizeUrl };

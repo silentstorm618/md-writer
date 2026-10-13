@@ -1810,6 +1810,16 @@ function boot() {
   if (window.__booted) return;
   window.__booted = true;
 
+  // 自检模式（?selftest=1 或 __selftest 全局）允许原生走 debug.eval 桥：
+  // 用来截屏、查 DOM、跑诊断脚本。正常用户场景下永远 false，
+  // 配合原生 debug.eval 的 __MDWRITER_DEBUG__ 校验，避免 XSS 借这条桥执行任意 JS。
+  try {
+    const usp = new URLSearchParams(location.search);
+    if (usp.get('selftest') === '1' || window.__selftest === true) {
+      window.__MDWRITER_DEBUG__ = true;
+    }
+  } catch { /* ignore */ }
+
   initI18n();          // 读原生注入的 window.__MD_LANG__
   applyDOM();          // 静态文案：工具栏 / 检视器 / 状态栏
   buildLanguageControl();
