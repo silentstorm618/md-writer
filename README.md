@@ -6,8 +6,17 @@
 
 ### 推荐：Homebrew
 
+本仓库自带 `Casks/md-writer.rb`，直接作为 tap 使用。
+Homebrew 6.0 起第三方 tap 需要显式信任，用**全限定名**安装可自动完成这一步：
+
 ```bash
-brew tap silentstorm618/md-writer https://github.com/silentstorm618/md-writer
+brew install --cask silentstorm618/md-writer/md-writer
+```
+
+如果你更习惯短名（`brew tap` + `brew trust`）：
+
+```bash
+brew tap silentstorm618/md-writer
 brew trust silentstorm618/md-writer
 brew install --cask md-writer
 ```
@@ -23,8 +32,8 @@ brew install --cask md-writer
 > 只是缺 Gatekeeper 票据。两种方式解决：
 >
 > ```bash
-> # 方式 1：用 Homebrew 安装（推荐，自动处理）
-> brew install --cask md-writer
+> # 方式 1：用 Homebrew 安装（推荐，自动清除隔离标记）
+> brew install --cask silentstorm618/md-writer/md-writer
 >
 > # 方式 2：手动移除下载标记
 > xattr -dr com.apple.quarantine /Applications/MDWriter.app
@@ -200,8 +209,8 @@ md-writer/
 │   │   ├── editor.js           所见即所得编辑器（HTML ↔ MD 双向）
 │   │   └── source-editor.js    CodeMirror 6 源码编辑器
 │   └── export/index.js         MD/HTML/PDF/DOCX/PNG 导出管线
-├── homebrew-tap/               Homebrew Cask tap（独立仓库）
-│   └── Casks/md-writer.rb      以 pkg 为安装源，CI 自动更新 version/sha256
+├── Casks/md-writer.rb         Homebrew Cask（本仓库即 tap）
+│                              以 pkg 为安装源，CI 发版时自动更新 version/sha256
 ├── docs/
 │   └── NOTARIZATION.md         签名 / 公证操作手册
 ├── .github/workflows/
