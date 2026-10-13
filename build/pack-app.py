@@ -68,14 +68,16 @@ def main():
         shutil.copytree(web_src, RES / "web", dirs_exist_ok=True)
 
     # 二进制
+    # 注意：必须无条件覆盖。原先只在文件不存在时拷贝，导致 .app 里
+    # 留着旧二进制 —— 改完 main.swift 再 make app，App 里跑的还是老代码，
+    # 排查问题时会被误导（我为此绕了好几轮）。
     binary = MACOS / "MDWriter"
-    if not binary.exists():
-        alt = ROOT / "build" / "MDWriter"
-        if alt.exists():
-            shutil.copy2(alt, binary)
-        else:
-            print("❌ 未找到已编译的二进制，请先运行 swiftc")
-            return 1
+    src_binary = ROOT / "build" / "MDWriter"
+    if src_binary.exists():
+        shutil.copy2(src_binary, binary)
+    elif not binary.exists():
+        print("❌ 未找到已编译的二进制，请先运行 make native")
+        return 1
     os.chmod(binary, 0o755)
 
     # 签名

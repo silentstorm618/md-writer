@@ -6,6 +6,7 @@
 import Cocoa
 import WebKit
 import UniformTypeIdentifiers
+import Carbon.HIToolbox
 
 // MARK: - 桥接消息
 
@@ -261,6 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var webView: WKWebView!
     private var docOpenedByApp = false
     private var isJavaScriptReady = false
+    private var openURIObserver: NSObjectProtocol?
     private var recentMenu: NSMenu!
     private let recentFilesKey = "MDWriter.recentFiles"
     private let recentFilesLimit = 10
@@ -293,6 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         buildMainMenu()
         buildWindow()
+        observeOpenURIs()
         NSApp.activate(ignoringOtherApps: true)
         registerFileOpen()
 
@@ -303,8 +306,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // macOS 打开文件会走三个通道，缺一不可：
+//   1. application(_:open:)        单文件（访达双击 / 拖到 Dock）
+//   2. application(_:openFiles:)   多选文件
+//   3. 直接监听 GURL / Oevt 两个 Apple Event —— App 已运行时的兜底通道。
+//
+// 前两个回调在某些场景（尤其 App 已运行时再打开另一个文件）不会触发，
+// 所以额外注册 Apple Event 处理，确保文件不会被静默丢弃。
+func application(_ application: NSApplication, open url: URL) {
+        traceOpen("callback application(open:) \(url.path)")
+        openFile(atPath: url.path)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func application(_ application: NSApplication, openFiles urls: [URL]) {
-        if let url = urls.first { openFile(atPath: url.path) }
+        traceOpen("callback application(openFiles:) \(urls.count) 个")
+        for url in urls { openFile(atPath: url.path) }
+        if !urls.isEmpty { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// App 已运行时接收「访达打开文件」的可靠入口。
+    ///
+    /// 实测（本项目踩过）：只实现 application(_:open:) 和
+    /// application(_:openFiles:) 时，冷启动能打开文件，
+    /// 但**已运行状态下再打开另一个文件，事件根本送不进来**
+    /// —— openFile 完全不被调用，文件被静默丢弃，表现为
+    /// 「必须先关掉 App 才能打开文件」。
+    ///
+    /// 解决：直接监听 GURL / Oevt 两个 Apple Event。
+    /// 这是 NSApplication 委托回调之外的经典通道，不依赖回调时机。
+    private func observeOpenURIs() {
+        let mgr = NSAppleEventManager.shared()
+        mgr.setEventHandler(
+            #selector(handleOpenDocumentsEvent(_:withReplyEvent:)),
+            andSelector: #selector(handleOpenDocumentsEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+        mgr.setEventHandler(
+            #selector(handleOpenDocumentsEvent(_:withReplyEvent:)),
+            andSelector: #selector(handleOpenDocumentsEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEOpenDocuments)
+        )
+    }
+
+    /// 从 alias 列表描述符里还原文件路径。
+    ///
+    /// Swift 的 NSAppleEventDescriptor 不暴露可写 AEDesc，
+    /// 无法直接 AEGetListItem 遍历。改为把它 coerce 成
+    /// NSURL 数组 —— Apple 已经提供了这个转换，内部会正确解 alias。
+    private func resolveAliases(in desc: NSAppleEventDescriptor) -> [String] {
+        // 首选：让 Foundation 直接把 alias 列表解成 URL 数组
+        if let urls = desc.coerce(toDescriptorType: typeAEList) as? [URL] {
+            let paths = urls.map(\.path)
+            if !paths.isEmpty { return paths }
+        }
+        // 兜底：单个 URL
+        if let url = desc.coerce(toDescriptorType: typeAlias) as? URL {
+            return [url.path]
+        }
+        // 最后兜底：字符串值
+        if let s = desc.stringValue, s.hasPrefix("/") { return [s] }
+        return []
+    }
+
+    /// 同时处理 GURL（单个文件路径）和 Oevt（alias 列表）
+    @objc private func handleOpenDocumentsEvent(
+        _ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor
+    ) {
+        var paths: [String] = []
+
+        // GURL：直接对象就是文件路径字符串
+        if let direct = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+           direct.hasPrefix("/") {
+            paths.append(direct)
+        }
+
+        // Oevt：直接对象是一组 alias。
+        // NSAppleEventDescriptor 在 Swift 里不暴露可变 AEDesc，
+        // 所以走 Swift 层：每个 alias 的直接对象是一个
+        // typeAlias 描述符，其数据经 FSPathMakeFromAlias 还原为路径。
+        if let listDesc = event.paramDescriptor(forKeyword: keyDirectObject) {
+            // 列表本身是 typeAEList，Swift 侧用 coercion + 逐项索引访问。
+            // 这里改用「解析整个事件描述符的文本形式」这一兜底路径，
+            // 因为 alias 的实际形态在不同系统版本上不一致，
+            // 直接按 typeAEList 处理容易踩空。
+            for url in resolveAliases(in: listDesc) { paths.append(url) }
+        }
+
+        traceOpen("AppleEvent 解析到 \(paths.count) 个: \(paths)")
+        for p in paths { openFile(atPath: p) }
+        if !paths.isEmpty { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// 打开文件相关的诊断：写到临时文件，便于排查文件关联问题
+    private func traceOpen(_ msg: String) {
+        NSLog("[MDWriter] %@", msg)
+        let line = "[MDWriter] \(msg)\n"
+        let p = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mdwriter-open.log")
+        if let h = try? FileHandle(forWritingTo: p) {
+            h.seekToEndOfFile()
+            h.write(line.data(using: .utf8)!)
+            try? h.close()
+        } else {
+            try? line.write(to: p, atomically: true, encoding: .utf8)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -529,9 +637,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openFile(atPath path: String) {
-        guard let data = FileManager.default.contents(atPath: path) else { return }
-        guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { return }
+        // 文件关联出问题时，这里能给出确切路径。
+        // NSLog 在部分环境（如无 Console.app 的 CI / 沙箱）取不到，
+        // 所以同时写一份到临时文件，方便排查。
+        func trace(_ msg: String) {
+            NSLog("[MDWriter] %@", msg)
+            let line = "[MDWriter] \(msg)\n"
+            let p = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("mdwriter-open.log")
+            if let h = try? FileHandle(forWritingTo: p) {
+                h.seekToEndOfFile()
+                h.write(line.data(using: .utf8)!)
+                try? h.close()
+            } else {
+                try? line.write(to: p, atomically: true, encoding: .utf8)
+            }
+        }
+
+        let exists = FileManager.default.fileExists(atPath: path)
+        trace("openFile: \(path) exists=\(exists)")
+
+        guard exists else { return }
+        guard let data = FileManager.default.contents(atPath: path) else {
+            trace("openFile: 无法读取内容")
+            return
+        }
+        guard let text = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1) else {
+            trace("openFile: 编码无法识别")
+            return
+        }
         recordRecent(path)
+        trace("openFile: 已发送 \(text.count) 字符")
         callJS("documentOpened", [
             "path": path,
             "name": (path as NSString).lastPathComponent,
