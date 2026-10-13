@@ -10,6 +10,11 @@ jobs:
     runs-on: macos-14
     permissions:
       contents: write
+    env:
+      # secrets 上下文不允许出现在 step 的 if 里（GitHub 会判定整个 workflow 无效，
+      # 连 job 都不会生成）。必须先落到 job 级 env，再用 env.* 判断。
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE }}
+      HAS_TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +48,7 @@ jobs:
       # ===================================================================
 
       - name: 导入签名证书
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        if: ${{ env.HAS_CERT != '' }}
         env:
           CERT_B64: ${{ secrets.MACOS_CERTIFICATE }}
           CERT_PWD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -63,7 +68,7 @@ jobs:
           rm -f /tmp/cert.p12
 
       - name: 签名 + 公证 + 生成 dmg/pkg
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        if: ${{ env.HAS_CERT != '' }}
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
@@ -82,7 +87,7 @@ jobs:
       # ===================================================================
 
       - name: 生成 dmg + pkg（未签名）
-        if: ${{ secrets.MACOS_CERTIFICATE == '' }}
+        if: ${{ env.HAS_CERT == '' }}
         run: |
           python3 build/make-dmg.py
           python3 build/make-pkg.py
@@ -93,14 +98,12 @@ jobs:
         id: sha
         run: |
           cd dist
-          echo "dmg=$(shasum -a 256 *.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "pkg=$(shasum -a 256 *.pkg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "dmg=$(shasum -a 256 ./*.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "pkg=$(shasum -a 256 ./*.pkg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       # 说明文本在 shell 里生成：GH Actions 表达式不支持字符串里的反引号，
       # 直接写在 body 里会导致整个 workflow 解析失败。
       - name: 生成 Release 说明
-        env:
-          HAS_CERT: ${{ secrets.MACOS_CERTIFICATE }}
         run: |
           {
             echo "## 安装"
@@ -137,7 +140,7 @@ jobs:
           generate_release_notes: true
 
       - name: 更新 Homebrew tap
-        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        if: ${{ env.HAS_TAP_TOKEN != '' }}
         env:
           TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
           VERSION: ${{ github.ref_name }}
