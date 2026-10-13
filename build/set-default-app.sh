@@ -98,13 +98,17 @@ echo "==> 注销开发副本与陈旧记录"
 "$LSREG" -u "$DEST_APP" 2>/dev/null || true
 "$LSREG" -u "$DEST_APP.bak" 2>/dev/null || true
 "$LSREG" -u "$HOME/Library/WebKit/$BUNDLE_ID" 2>/dev/null || true
-# WKWebView 运行时缓存：命名与 bundle id 相同，会被 LS 误注册
-for d in "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)/$BUNDLE_ID" \
+# WKWebView / AppKit 运行时缓存：命名与 bundle id 相同，会被 LS 误注册。
+# 这些目录没有 Info.plist、没有二进制，但 LS 只看路径就可能当成 App 副本。
+# 实测踩过：~/.Trash/com.mdwriter.app 被派发 open 事件，
+# 表现为「双击 .md 只启动 App 却不打开文件」。
+for d in "$HOME/Library/WebKit/$BUNDLE_ID" \
+         "$HOME/Library/Caches/$BUNDLE_ID" \
+         "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)/$BUNDLE_ID" \
          "$HOME/.Trash/$BUNDLE_ID"; do
-  if [ -e "$d" ]; then
-    "$LSREG" -u "$d" 2>/dev/null || true
-    echo "    已注销 WKWebView 缓存: ${d##*/}"
-  fi
+  [ -e "$d" ] || continue
+  "$LSREG" -u "$d" 2>/dev/null || true
+  echo "    已注销缓存诱饵: ${d/#$HOME/~}"
 done
 # 清理历次改名留下的备份（.old.* ）
 for old in "$DEST_APP".old.* "$DEST_APP".bak; do
@@ -146,12 +150,21 @@ STRAY="$("$LSREG" -dump 2>/dev/null \
   | grep -i 'mdwriter' \
   | grep -vF "$DEST_APP" \
   | sed 's/^path: *//; s/ ([0-9x]*)$//')"
+# 硬校验：LS 里凡是含 mdwriter 的路径，都必须含有 Contents/Info.plist。
+# 只要是缓存目录 / 空壳（缺 Info.plist），一律判定为诱饵并注销 ——
+# 这类目录会让 open 事件被派发过去，App 启动但不打开文件，且毫无征兆。
+while IFS= read -r s; do
+  [ -z "$s" ] && continue
+  [ "$s" = "$DEST_APP" ] && continue
+  if [ -f "$s/Contents/Info.plist" ]; then
+    echo "    [注意] 发现另一份完整 App: $s"
+  else
+    echo "    已清除诱饵: ${s/#$HOME/~}"
+  fi
+  "$LSREG" -u "$s" 2>/dev/null || true
+done <<< "$STRAY"
+
 if [ -n "$STRAY" ]; then
-  while IFS= read -r s; do
-    [ -z "$s" ] && continue
-    echo "    [注意] 发现诱饵注册: $s"
-    "$LSREG" -u "$s" 2>/dev/null || true
-  done <<< "$STRAY"
   sleep 1
   "$LSREG" -f "$DEST_APP"
   sleep 1

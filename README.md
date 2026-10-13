@@ -45,6 +45,27 @@ make default-app
 之后双击 `.md` 文件就会用 MD Writer 打开。也可手动设置：
 「系统设置 → 通用 → 默认应用 → 文件扩展名 → `.md` → 选 MD Writer」。
 
+#### 排障：双击 `.md` 只启动 App、不打开文件
+
+macOS 有个坑：WKWebView / AppKit 的运行时缓存目录
+（`~/Library/Caches/com.mdwriter.app`、`~/Library/WebKit/com.mdwriter.app`、
+`$TMPDIR/com.mdwriter.app`）**以 bundle id 命名**，没有 `Info.plist`。
+一旦某个操作触发 LaunchServices 扫描全盘（例如**把 App 移到废纸篓**），
+这些缓存目录就会被误认成 App 副本并注册，open 事件随之被派发给它们 ——
+结果就是 App 启动了，但没有代码打开文件。
+
+排查第一条命令：
+
+```bash
+lsregister -dump | grep '^path:' | grep -i mdwriter
+```
+
+正常应**只有一行** `/Applications/MDWriter.app`。多出来的行都是诱饵。
+用 `make default-app` 可自动清理（脚本会校验并注销诱饵）。
+
+注意：**不要用「移到废纸篓」来替换旧版本**，那正是触发误注册的诱因。
+`make default-app` 用 `mv` 改名为 `.old.<时间戳>` 再装新版，不经过废纸篓。
+
 ## 构建（推荐 Makefile）
 
 ```bash
