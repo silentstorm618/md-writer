@@ -34,6 +34,17 @@ brew install --cask md-writer
 >
 > 项目补齐签名公证后此问题消失，步骤见 [docs/NOTARIZATION.md](docs/NOTARIZATION.md)。
 
+### 设为默认打开程序
+
+装好后执行一次，把 `.md` / `.markdown` 的默认打开程序设为 MD Writer：
+
+```bash
+make default-app
+```
+
+之后双击 `.md` 文件就会用 MD Writer 打开。也可手动设置：
+「系统设置 → 通用 → 默认应用 → 文件扩展名 → `.md` → 选 MD Writer」。
+
 ## 构建（推荐 Makefile）
 
 ```bash

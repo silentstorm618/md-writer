@@ -7,7 +7,7 @@
 #   make clean      # 清理产物
 
 .PHONY: all dev build native pack finalize app dist dmg pkg sign notarize verify-sign \
-        test selftest selftest-dom clean run
+        test selftest selftest-dom clean run default-app
 
 NODE    ?= node
 PYTHON  ?= python3
@@ -66,6 +66,10 @@ test: selftest selftest-dom
 # --- 运行 ---
 run:
 	./native/MDWriter.app/Contents/MacOS/MDWriter
+
+# --- 设为默认 Markdown 程序 ---
+default-app: app
+	bash build/set-default-app.sh
 
 # --- 清理 ---
 clean:
