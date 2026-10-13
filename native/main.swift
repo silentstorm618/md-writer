@@ -134,8 +134,10 @@ enum L10n {
         "menu.minimize": "最小化",
         "menu.zoomWindow": "缩放",
         "menu.bringAllToFront": "前置全部窗口",
+        "menu.reopenLast": "重新打开最近文件",
         "menu.help": "帮助",
         "err.logNotFound": "还没有诊断日志，正常打开一次文件后就会出现",
+        "err.noRecentFile": "还没有打开过文件",
         "menu.cheatsheet": "Markdown 语法速查",
         // 窗口标题 / 状态
         "title.docs": "[{n} 个文档] ",
@@ -232,8 +234,10 @@ enum L10n {
         "menu.minimize": "Minimize",
         "menu.zoomWindow": "Zoom",
         "menu.bringAllToFront": "Bring All to Front",
+        "menu.reopenLast": "Reopen Last File",
         "menu.help": "Help",
         "err.logNotFound": "No diagnostic log yet — it appears after opening a file",
+        "err.noRecentFile": "No file opened yet",
         "menu.cheatsheet": "Markdown Cheatsheet",
 
         "title.docs": "[{n} docs] ",
@@ -335,6 +339,25 @@ func application(_ application: NSApplication, open url: URL) {
         traceOpen("callback application(openFiles:) \(urls.count) 个")
         for url in urls { openFile(atPath: url.path) }
         if !urls.isEmpty { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// 菜单：手动重新打开最近使用的文件。
+    ///
+    /// 背景：macOS 把 open 事件派发给已运行的实例，走的是
+    /// application(_:open:) / application(_:openFiles:)。
+    /// 某些系统环境下这两个回调收不到文件（比如 App 是被
+    /// 旧版本启动后再收到 open 事件）。
+    /// 既然「⌘O 选文件」这条路径经过验证是可靠的，
+    /// 这里复用同一套逻辑提供兜底入口：记住最近打开的路径，
+    /// 用户可从「文件 → 重新打开」直接载入。
+    @objc func reopenLastFile() {
+        let path = UserDefaults.standard.string(forKey: "mdwriter.lastPath") ?? ""
+        guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else {
+            showToast(L10n.tr("err.noRecentFile"), kind: "info")
+            return
+        }
+        openFile(atPath: path)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
 
@@ -958,6 +981,8 @@ func application(_ application: NSApplication, open url: URL) {
         recentItem.submenu = recentMenu
         fileMenu.addItem(recentItem)
         fileMenu.addItem(item(L10n.tr("menu.clearRecent"), #selector(clearRecentFiles), ""))
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(item(L10n.tr("menu.reopenLast"), #selector(reopenLastFile), "r", [.option, .command]))
         fileMenu.addItem(.separator())
         fileMenu.addItem(item(L10n.tr("menu.closeTab"), #selector(closeTab), "w"))
         fileMenu.addItem(item(L10n.tr("menu.closeOtherTabs"), #selector(closeOtherTabs), "w", [.option, .command, .shift]))
