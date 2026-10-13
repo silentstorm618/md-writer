@@ -73,6 +73,13 @@ echo "==> 注销开发副本与陈旧记录"
 #   1) 开发副本（bundle id 与安装版相同，系统按路径优先匹配开发目录）
 #   2) ~/Library/WebKit/<bundleid> —— WebKit 容器，会被注册成 App 声明来源
 #   3) 上次注册留下的记录（LS 是累积的，-f 只是追加）
+#
+# 特别注意：开发副本很容易被重新注册回来 ——
+# 只要有人直接运行 ./native/MDWriter.app/Contents/MacOS/MDWriter，
+# 或者从该路径 open，LS 就会把它记进去。
+# 两份 bundle id 相同会导致「App 开着时双击 .md 打不开」：
+# 事件被路由到开发目录那份，而它的窗口/状态与实际显示的 App 不一致。
+# 所以开发期跑完 App 后，重跑一次本脚本清理即可。
 "$LSREG" -u "$SRC_APP" 2>/dev/null || true
 "$LSREG" -u "$DEST_APP" 2>/dev/null || true
 # 清理历次改名留下的备份（.old.* ）
@@ -90,6 +97,24 @@ echo "==> 设置默认处理器"
 swift "$ROOT/build/set-default.swift" "$BUNDLE_ID" "$UTI_STD" "$UTI_FALLBACK"
 
 echo "==> 验证"
+# 检查开发副本是否又混进来。
+# 注意 make app 里的 pack/finalize 可能触发扫描，把 native/ 那份也记进 LS，
+# 所以注销必须放在构建之后 —— 也就是这个位置。
+DEV_IN_LS=0
+for p in "$SRC_APP" "$HOME/Library/WebKit/$BUNDLE_ID"; do
+  [ -e "$p" ] || continue
+  if "$LSREG" -dump 2>/dev/null | grep -qF "$p"; then
+    "$LSREG" -u "$p" 2>/dev/null || true
+    DEV_IN_LS=1
+  fi
+done
+if [ "$DEV_IN_LS" = "1" ]; then
+  sleep 1
+  "$LSREG" -f "$DEST_APP"
+  sleep 1
+  echo "    （已清除构建过程重新登记的开发副本）"
+fi
+
 PROBE="/tmp/mdwriter-probe.md"
 printf '# probe' > "$PROBE" 2>/dev/null || true
 VERIFY="$(swift -e "
