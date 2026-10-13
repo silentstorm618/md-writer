@@ -1459,8 +1459,15 @@ func log(_ msg: String) {
 
 log("启动 MDWriter…")
 let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
+
+// 必须用顶层全局变量持有 delegate。
+// `NSApplication.delegate` 是 **weak** 引用，若 delegate 只是局部变量，
+// 它会在作用域结束时被 ARC 释放，delegate 变成 nil ——
+// 表现为 application(_:open:) / application(_:openFiles:) 永远不触发，
+// 双击 .md 只启动 App 却不打开文件。
+// （这个坑排查了很久：日志里始终只有「启动完成」而没有 callback 记录。）
+let mdWriterDelegate = AppDelegate()
+app.delegate = mdWriterDelegate
 app.setActivationPolicy(.regular)
 log("NSApplication 已创建，开始 run loop")
 
@@ -1471,7 +1478,7 @@ if args.contains("--selftest"), let idx = args.firstIndex(of: "--selftest"),
    idx + 1 < args.count {
     let outPath = args[idx + 1]
     DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
-        delegate.saveScreenshot(to: outPath)
+        mdWriterDelegate.saveScreenshot(to: outPath)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             NSApp.terminate(nil)
         }
