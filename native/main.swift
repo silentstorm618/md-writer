@@ -366,27 +366,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // 原因是 Swift 的 @objc 方法签名与 NSAppleEventManager 期望的不匹配，
 // 调用时产生野指针。
 // **不要用 NSAppleEventManager 手写处理器**，只用下面两个委托回调。
-func application(_ application: NSApplication, open url: URL) {
-        traceOpen("callback application(open:) \(url.path)")
-        openFile(atPath: url.path)
-        NSApp.activate(ignoringOtherApps: true)
+//
+    // **必须用数组版本**。SDK 头文件（NSApplication.h:415-417）写明：
+    //   "Document types (CFBundleDocumentTypes) that have no associated
+    //    NSDocument class ... will be called via application:openURLs:"
+    //   "If this is implemented, -application:openFiles: and
+    //    -application:openFile: will not be called."
+    //
+    // 本 App 没有 NSDocument，所以 macOS 只会调 application:openURLs:
+    // 对应 Swift 签名 application(_:open urls: [URL])。
+    //
+    // ⚠️ 之前写的是 application(_:open url: URL)（单个 URL）。
+    // 在 Swift 里这个签名会编译成 application:open:，
+    // 与 application:openURLs: 不是同一个 selector，
+    // 于是 macOS 永远调不到 —— 症状是「App 启动但文件不打开」，
+    // 且日志里没有任何 callback 记录。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        traceOpen("callback application(open:) 收到 \(urls.count) 个")
+        for url in urls { openFile(atPath: url.path) }
+        if !urls.isEmpty { NSApp.activate(ignoringOtherApps: true) }
     }
 
-    // NSApplicationDelegate 里还有两个历史命名的回调，
-    // AppKit 在不同场景下会调其中之一，必须都实现：
-    //   application(_:openFile:)   —— 单数，legacy 名字
-    //   application(_:openFiles:)  —— 复数
-    // 漏掉任何一个，文件就静默丢失（App 正常启动但内容为空）。
+    // 历史命名（openFile: / openFiles:）在 AppKit 里仍然可能被调，
+    // 一并实现作为兜底。三者都不会互相干扰 —— 它们是不同 selector。
     func application(_ application: NSApplication, openFile filename: String) {
         traceOpen("callback application(openFile:) \(filename)")
         openFile(atPath: filename)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func application(_ application: NSApplication, openFiles urls: [URL]) {
-        traceOpen("callback application(openFiles:) \(urls.count) 个")
-        for url in urls { openFile(atPath: url.path) }
-        if !urls.isEmpty { NSApp.activate(ignoringOtherApps: true) }
+    func application(_ application: NSApplication, openFiles filenames: [String]) {
+        traceOpen("callback application(openFiles:) \(filenames.count) 个")
+        for f in filenames { openFile(atPath: f) }
+        if !filenames.isEmpty { NSApp.activate(ignoringOtherApps: true) }
     }
 
     /// 菜单：手动重新打开最近使用的文件。
