@@ -54,11 +54,22 @@ macOS 有个坑：WKWebView / AppKit 的运行时缓存目录
 这些缓存目录就会被误认成 App 副本并注册，open 事件随之被派发给它们 ——
 结果就是 App 启动了，但没有代码打开文件。
 
-排查第一条命令：
+排查按这个顺序来，从便宜到昂贵：
 
 ```bash
+# 1) 签名是否有效 —— 签名失效时 macOS 直接拒绝派发 open 事件，
+#    症状是「App 能启动但文件打不开」，且没有任何用户提示
+codesign --verify --deep /Applications/MDWriter.app && echo OK
+spctl -a -vv /Applications/MDWriter.app    # "invalid Info.plist" = 签名已损坏
+                                       # "rejected" = 只是未公证（正常，见上）
+
+# 2) 注册表里是否有诱饵（WKWebView 缓存目录以 bundle id 命名，会被误注册）
 lsregister -dump | grep '^path:' | grep -i mdwriter
 ```
+
+> ⚠️ **改过 `Info.plist` 就必须重新签名**，否则签名与 plist 不一致而失效：
+> `codesign --force --deep --sign - /Applications/MDWriter.app`
+> `make default-app` 已包含这一步并会校验。
 
 正常应**只有一行** `/Applications/MDWriter.app`。多出来的行都是诱饵。
 用 `make default-app` 可自动清理（脚本会校验并注销诱饵）。
