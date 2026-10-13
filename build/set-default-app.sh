@@ -85,24 +85,31 @@ PYEOF
 echo "    已安装（属主 $(stat -f '%Su' "$DEST_APP")）"
 
 echo "==> 注销开发副本与陈旧记录"
-# 必须清掉三处，否则 open .md 打开的仍是旧路径那份：
+# 必须清掉以下几处，否则 open .md 打开的仍是错的东西：
 #   1) 开发副本（bundle id 与安装版相同，系统按路径优先匹配开发目录）
 #   2) ~/Library/WebKit/<bundleid> —— WebKit 容器，会被注册成 App 声明来源
 #   3) 上次注册留下的记录（LS 是累积的，-f 只是追加）
-#
-# 特别注意：开发副本很容易被重新注册回来 ——
-# 只要有人直接运行 ./native/MDWriter.app/Contents/MacOS/MDWriter，
-# 或者从该路径 open，LS 就会把它记进去。
-# 两份 bundle id 相同会导致「App 开着时双击 .md 打不开」：
-# 事件被路由到开发目录那份，而它的窗口/状态与实际显示的 App 不一致。
-# 所以开发期跑完 App 后，重跑一次本脚本清理即可。
+#   4) **WKWebView 运行时缓存目录**（$TMPDIR/<bundleid>、~/.Trash/<bundleid>）
+#      这些目录只含 WebKit/ 子目录、没有 Info.plist 也没有二进制，
+#      但因为以 bundle id 命名，LaunchServices 会把它们误认成 App 副本并注册。
+#      实测：macOS 会把 open 事件派发给 ~/.Trash 里那个空壳，
+#      表现为「双击 .md 只启动 App 却不打开文件」——排查了很久才定位到。
 "$LSREG" -u "$SRC_APP" 2>/dev/null || true
 "$LSREG" -u "$DEST_APP" 2>/dev/null || true
+"$LSREG" -u "$DEST_APP.bak" 2>/dev/null || true
+"$LSREG" -u "$HOME/Library/WebKit/$BUNDLE_ID" 2>/dev/null || true
+# WKWebView 运行时缓存：命名与 bundle id 相同，会被 LS 误注册
+for d in "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)/$BUNDLE_ID" \
+         "$HOME/.Trash/$BUNDLE_ID"; do
+  if [ -e "$d" ]; then
+    "$LSREG" -u "$d" 2>/dev/null || true
+    echo "    已注销 WKWebView 缓存: ${d##*/}"
+  fi
+done
 # 清理历次改名留下的备份（.old.* ）
 for old in "$DEST_APP".old.* "$DEST_APP".bak; do
   [ -e "$old" ] && "$LSREG" -u "$old" 2>/dev/null || true
 done
-"$LSREG" -u "$HOME/Library/WebKit/$BUNDLE_ID" 2>/dev/null || true
 sleep 1
 
 echo "==> 注册到 LaunchServices"
@@ -129,6 +136,25 @@ if [ "$DEV_IN_LS" = "1" ]; then
   "$LSREG" -f "$DEST_APP"
   sleep 1
   echo "    （已清除构建过程重新登记的开发副本）"
+fi
+
+# 硬校验：LS 里只能有安装版一条路径。
+# 任何诱饵（开发副本 / WebKit 缓存 / 废纸篓空壳）都会让 open 事件被派发过去，
+# 表现为「双击 .md 只启动 App 却不打开文件」。这里宁可报错也不要放过。
+STRAY="$("$LSREG" -dump 2>/dev/null \
+  | grep '^path:' \
+  | grep -i 'mdwriter' \
+  | grep -vF "$DEST_APP" \
+  | sed 's/^path: *//; s/ ([0-9x]*)$//')"
+if [ -n "$STRAY" ]; then
+  while IFS= read -r s; do
+    [ -z "$s" ] && continue
+    echo "    [注意] 发现诱饵注册: $s"
+    "$LSREG" -u "$s" 2>/dev/null || true
+  done <<< "$STRAY"
+  sleep 1
+  "$LSREG" -f "$DEST_APP"
+  sleep 1
 fi
 
 PROBE="/tmp/mdwriter-probe.md"
