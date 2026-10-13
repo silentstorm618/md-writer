@@ -18,6 +18,8 @@
 #     只设前者会出现「API 返回成功，但双击 .md 打开的还是别的 App」。
 #   - 旧版本可能是 root 属主，普通用户删不掉，此时直接报错提示手动移除，
 #     不要硬删后留个半成品
+#   - 但改名（mv 成 .bak）是 SIP 允许的，比 rm 可靠，
+#     所以脚本优先用 mv，mv 失败才提示用户手动处理。
 #
 # Bash 的一个坑（在本项目实际踩到）：
 #   set -u 下，"$VAR" 后面紧跟中文字符时，bash 会把中文的 UTF-8 字节
@@ -43,18 +45,23 @@ if [ ! -d "$SRC_APP" ]; then
 fi
 
 echo "==> 安装到 $DEST_APP"
-# 旧版本可能是 root 属主（曾用 sudo 装过），普通用户删不掉。
-# 这时不能硬删，直接报错提示手动处理 —— 否则会留下装了一半的坏状态。
+# 旧版本可能是 root 属主（曾用 sudo 装过），此时 rm 会被 SIP 挡掉，
+# 连 `do shell script with administrator privileges` 也删不掉。
+# 但**改名是允许的** —— mv 成 .bak 再 cp 新版，比 rm 可靠。
+# 若 mv 也失败，则说明权限确实不足，明确报错让用户手动处理。
 if [ -e "$DEST_APP" ]; then
-  OWNER="$(stat -f '%Su' "$DEST_APP" 2>/dev/null || echo '?')"
-  if [ "$OWNER" != "$(id -un)" ]; then
-    echo "    [注意] 已有 ${DEST_APP}，属主是 ${OWNER}，普通用户无法删除。"
+  # 用时间戳备份名：固定的 .bak 可能已被 root 属主的残留占住，
+  # 且那个残留普通用户删不掉，导致 mv 因目标名冲突而失败。
+  BAK="${DEST_APP}.old.$(date +%s)"
+  if mv "$DEST_APP" "$BAK" 2>/dev/null; then
+    echo "    旧版本已改名为 ${BAK##*/}"
+  else
+    echo "    [注意] 已有 ${DEST_APP}，但无法改名（属主 $(stat -f '%Su' "$DEST_APP" 2>/dev/null || echo '?')）。"
     echo "    请在「访达」里把它移到废纸篓，或执行："
     echo "        sudo rm -rf $DEST_APP"
     echo "    移除后重跑本脚本即可。"
     exit 1
   fi
-  rm -rf "$DEST_APP"
 fi
 
 xattr -cr "$SRC_APP" 2>/dev/null || true
@@ -68,6 +75,10 @@ echo "==> 注销开发副本与陈旧记录"
 #   3) 上次注册留下的记录（LS 是累积的，-f 只是追加）
 "$LSREG" -u "$SRC_APP" 2>/dev/null || true
 "$LSREG" -u "$DEST_APP" 2>/dev/null || true
+# 清理历次改名留下的备份（.old.* ）
+for old in "$DEST_APP".old.* "$DEST_APP".bak; do
+  [ -e "$old" ] && "$LSREG" -u "$old" 2>/dev/null || true
+done
 "$LSREG" -u "$HOME/Library/WebKit/$BUNDLE_ID" 2>/dev/null || true
 sleep 1
 
