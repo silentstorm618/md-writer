@@ -2061,9 +2061,21 @@ function wireTabBar() {
   });
 }
 
-// 原生环境下由 ready 触发；浏览器预览下直接启动
+// 握手：桥接对象挂载完毕后**主动**通知原生。
+//
+// 之前依赖原生在 WKNavigationDelegate 回调里判断「页面已就绪」，
+// 但 window.MDWriter 是本模块顶层同步赋值的，
+// 两者谁先谁后不确定 —— 原生先补发就会撞上
+// `window.MDWriter && ...` 的短路，事件被静默丢弃，
+// 而原生侧的日志已经打了「已发送」，看不出失败。
+//
+// 改成前端主动 handshake：挂载完就发 bridgeReady，
+// 原生收到后才认为可用并补发排队事件。不依赖任何时序猜测。
 if (isNative) {
-  // 兜底：若原生 ready 未到达，1.5s 后自行启动
+  window.webkit.messageHandlers.mdwriter.postMessage({
+    action: 'bridgeReady', payload: {},
+  });
+  // 兜底：万一握手消息丢了，1.5s 后自行启动
   setTimeout(boot, 1500);
 } else {
   boot();

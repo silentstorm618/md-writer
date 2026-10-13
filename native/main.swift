@@ -629,9 +629,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 页面加载完成 -> 通知前端启动
+    /// 页面加载完成 -> 兜底通知
+    ///
+    /// 主路径是前端主动发 bridgeReady（时序确定）。
+    /// 这里只作兜底：万一握手消息丢失，至少不会卡在空白页。
+    /// markReady 内部有幂等保护，两条路径不会重复补发。
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        markReady()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, !self.isJavaScriptReady else { return }
+            self.traceOpen("握手未到达，用导航完成兜底 markReady")
+            self.markReady()
+        }
     }
 
     private func userContentControllerProxy(_ ucc: WKUserContentController) -> WKUserContentController {
@@ -650,6 +658,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let payload = dict["payload"] as? [String: Any] ?? [:]
 
         switch action {
+        case "bridgeReady":
+            // 前端桥接已挂载完毕，可以安全投递事件了
+            traceOpen("收到前端握手 bridgeReady")
+            markReady()
         case "open":
             presentOpenPanel()
         case "save":
@@ -730,21 +742,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         DispatchQueue.main.async {
             let js = "window.MDWriter && window.MDWriter.on('\(name)', \(json));"
-            self.webView.evaluateJavaScript(js, completionHandler: nil)
+            self.webView.evaluateJavaScript(js) { _, err in
+                // 带回执：evaluateJavaScript 对「语句求值为 undefined」
+                // 也会当成成功，只有抛异常才是失败。
+                // 这里用明确的存在性检查，避免再次出现
+                // 「日志说已发送、实际被 window.MDWriter && 短路丢弃」的情况。
+                if let err {
+                    self.traceOpen("投递失败 \(name): \(err.localizedDescription)")
+                } else {
+                    self.traceOpen("投递成功 \(name)")
+                }
+            }
         }
     }
 
-    /// 页面加载完成后标记 JS 可用，并补发排队中的调用
+    /// 前端桥接就绪（收到 bridgeReady 握手）后启用投递并补发队列。
+    ///
+    /// 不再用 WKNavigationDelegate 的导航完成回调来判断 ——
+    /// 导航完成只保证 HTML 加载完，不保证模块顶层已经把
+    /// window.MDWriter 挂上。改由前端主动握手，时序才确定。
     private func markReady() {
+        guard !isJavaScriptReady else { return }
         isJavaScriptReady = true
         callJS("ready", [:])
         // 排队期间积压的事件按顺序补发 —— documentOpened 必须排在 ready 之后，
         // 否则前端还没挂上监听就收到文件，事件又丢了。
         let queued = pendingJSCalls
         pendingJSCalls.removeAll()
+        traceOpen("补发排队事件 \(queued.count) 个: \(queued.map(\.0))")
         for (name, json) in queued {
             let js = "window.MDWriter && window.MDWriter.on('\(name)', \(json));"
-            DispatchQueue.main.async { self.webView.evaluateJavaScript(js, completionHandler: nil) }
+            DispatchQueue.main.async {
+                self.webView.evaluateJavaScript(js) { _, err in
+                    if let err {
+                        self.traceOpen("补发失败 \(name): \(err.localizedDescription)")
+                    } else {
+                        self.traceOpen("补发成功 \(name)")
+                    }
+                }
+            }
         }
     }
 
