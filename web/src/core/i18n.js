@@ -87,7 +87,8 @@ const zh = {
   'insp.followSystemFont': '跟随系统字号',
   'insp.tocDepth': '目录深度',
   'insp.about': '关于',
-  'insp.about.body': 'MD Writer 1.0\n原生 macOS Markdown 编辑器\n数据全部保存在本地',
+  // 走 data-i18n-html（innerHTML），所以换行必须是 <br> 而不是 \n
+  'insp.about.body': 'MD Writer 1.1<br>原生 macOS Markdown 编辑器<br>数据全部保存在本地',
   'insp.language': '界面语言',
 
   // 主题 / 字体显示名（id 不翻译，只翻译 label / desc）
@@ -240,7 +241,7 @@ const en = {
   'insp.followSystemFont': 'Follow system font size',
   'insp.tocDepth': 'Outline depth',
   'insp.about': 'About',
-  'insp.about.body': 'MD Writer 1.0\nNative macOS Markdown editor\nAll data stays on your Mac',
+  'insp.about.body': 'MD Writer 1.1<br>Native macOS Markdown editor<br>All data stays on your Mac',
   'insp.language': 'Language',
 
   'theme.tech': 'Technical',
