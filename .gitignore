@@ -1,0 +1,15 @@
+node_modules/
+
+# 构建产物（均可从源码重建：make app / make dist）
+build/MDWriter
+native/MDWriter.app/
+MD Writer.app/
+dist/
+*.dmg
+*.pkg
+
+# homebrew-tap 是独立仓库，不进主仓库
+homebrew-tap/
+
+# macOS
+.DS_Store

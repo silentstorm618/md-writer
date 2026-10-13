@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Hardened Runtime 最小例外集。
+	     仅在使用 Developer ID 签名（--options runtime）时生效；
+	     ad-hoc 签名不使用本文件。
+
+	     WKWebView 的 JS 引擎跑在独立的 WebKit 进程，主 App 不需要 allow-jit。
+	     若公证后运行时出现「白屏 / JS 不执行 / 预览空白」，再取消下面两项注释。 -->
+	<!-- <key>com.apple.security.cs.allow-jit</key><true/> -->
+	<!-- <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/> -->
+
+	<!-- 只加载本团队签名的动态库（Hardened Runtime 默认行为，显式声明防回归） -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<false/>
+
+	<!-- 注意：不要添加 com.apple.security.get-task-allow，
+	     该 entitlement 会导致公证 100% 被拒。 -->
+</dict>
+</plist>

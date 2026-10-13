@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5B8DEF"/>
+      <stop offset="55%" stop-color="#4A6FE3"/>
+      <stop offset="100%" stop-color="#3B57C9"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E9EEFB"/>
+    </linearGradient>
+    <linearGradient id="pen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD166"/>
+      <stop offset="100%" stop-color="#F4A62A"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12.288" stdDeviation="18.432" flood-color="#1B2A5E" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- 底板 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="229.0688" ry="229.0688" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="512" rx="229.0688" ry="229.0688" fill="#FFFFFF" opacity="0.10"/>
+
+  <!-- 文档 -->
+  <g filter="url(#sh)">
+    <path d="M 266.24 184.32
+             L 624.64 184.32
+             L 757.76 317.44
+             L 757.76 860.1600000000001
+             L 266.24 860.1600000000001 Z"
+          fill="url(#paper)"/>
+    <!-- 折角 -->
+    <path d="M 624.64 184.32
+             L 624.64 317.44
+             L 757.76 317.44 Z"
+          fill="#C6D2F5"/>
+  </g>
+
+  <!-- 文本行（模拟 Markdown） -->
+  <g stroke="#9AA8C7" stroke-width="22.528" stroke-linecap="round">
+    <line x1="322.56" y1="317.44" x2="665.6" y2="317.44"/>
+    <line x1="322.56" y1="373.76" x2="701.4399999999999" y2="373.76"/>
+    <line x1="322.56" y1="430.08000000000004" x2="614.4" y2="430.08000000000004"/>
+  </g>
+  <!-- 标题行更粗 -->
+  <rect x="322.56" y="243.712" width="204.8" height="28.672" rx="14.336" fill="#5B8DEF"/>
+
+  <!-- M 标记（Markdown） -->
+  <g stroke="#5B8DEF" stroke-width="30.72" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.95">
+    <path d="M 327.68 783.3600000000001 L 327.68 701.44 L 373.76 742.4000000000001 L 419.84000000000003 701.44 L 419.84000000000003 783.3600000000001"/>
+  </g>
+
+  <!-- 笔 -->
+  <g transform="rotate(-42 716.8 675.84)">
+    <rect x="680.96" y="430.08" width="76.8" height="307.2" rx="18.432" fill="url(#pen)"/>
+    <path d="M 680.96 737.28 L 719.36 819.2 L 757.76 737.28 Z" fill="#3B3218"/>
+    <rect x="680.96" y="465.92" width="76.8" height="28.672" fill="#FFFFFF" opacity="0.45"/>
+  </g>
+</svg>

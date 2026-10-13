@@ -1,0 +1,52 @@
+{
+  "name": "md-writer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MD Writer - macOS 原生 Markdown 所见即所得编辑器，可导出 HTML/PDF/DOCX/PNG",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build/build.mjs",
+    "watch": "node build/build.mjs --watch",
+    "native": "swiftc -O -o build/MDWriter native/main.swift",
+    "pack": "python3 build/pack-app.py",
+    "finalize": "python3 build/finalize.py",
+    "app": "npm run native && npm run pack && npm run finalize",
+    "dmg": "python3 build/make-dmg.py",
+    "pkg": "python3 build/make-pkg.py",
+    "dist": "npm run app && npm run dmg && npm run pkg",
+    "sign": "python3 build/notarize.py",
+    "notarize": "python3 build/notarize.py --dmg --pkg",
+    "verify:sign": "python3 build/notarize.py --check",
+    "selftest": "node build/selftest.mjs",
+    "selftest:dom": "node build/selftest-dom.mjs",
+    "test": "npm run selftest && npm run selftest:dom",
+    "run": "./native/MDWriter.app/Contents/MacOS/MDWriter",
+    "clean": "rm -rf build/MDWriter native/MDWriter.app/Contents/Resources/web"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.4",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/language-data": "^6.5.1",
+    "@codemirror/search": "^6.5.8",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.1",
+    "codemirror": "^6.0.1",
+    "docx": "^9.1.1",
+    "dompurify": "^3.2.3",
+    "highlight.js": "^11.11.1",
+    "html2canvas": "^1.4.1",
+    "katex": "^0.16.11",
+    "marked": "^15.0.6",
+    "mermaid": "^11.4.1",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "jsdom": "^30.1.2"
+  }
+}

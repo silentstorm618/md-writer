@@ -1,0 +1,135 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 跑自检
+        run: npm test
+
+      - name: 同步版本号到 Info.plist
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VER="${TAG#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" native/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" native/Info.plist
+          echo "版本设为 $VER (build $GITHUB_RUN_NUMBER)"
+
+      - name: 构建 .app
+        run: make app
+
+      # ===================================================================
+      # 以下两步只在配置了签名证书时才执行。
+      # 当前未配置 → 自动跳过，产物未签名，靠 Homebrew Cask 分发。
+      # ===================================================================
+
+      - name: 导入签名证书
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          CERT_B64: ${{ secrets.MACOS_CERTIFICATE }}
+          CERT_PWD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$CERT_B64" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "$KEYCHAIN_PWD" /tmp/build.keychain
+          security default-keychain -s /tmp/build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PWD" /tmp/build.keychain
+          security set-keychain-settings -lut 3600 /tmp/build.keychain
+          security import /tmp/cert.p12 -k /tmp/build.keychain \
+            -P "$CERT_PWD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign:,productsign: \
+            -s -k "$KEYCHAIN_PWD" /tmp/build.keychain
+          security list-keychain -d user -s /tmp/build.keychain
+          rm -f /tmp/cert.p12
+
+      - name: 签名 + 公证 + 生成 dmg/pkg
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_KEY_PATH: /tmp/AuthKey.p8
+        run: |
+          if [ -n "$NOTARY_KEY_ID" ]; then
+            printf '%s' '${{ secrets.NOTARY_KEY_P8 }}' > "$NOTARY_KEY_PATH"
+            chmod 600 "$NOTARY_KEY_PATH"
+          fi
+          python3 build/notarize.py --dmg --pkg
+
+      # ===================================================================
+      # 无证书时的产物生成（当前走这条路）
+      # ===================================================================
+
+      - name: 生成 dmg + pkg（未签名）
+        if: ${{ secrets.MACOS_CERTIFICATE == '' }}
+        run: |
+          python3 build/make-dmg.py
+          python3 build/make-pkg.py
+
+      # ===================================================================
+
+      - name: 计算 sha256
+        id: sha
+        run: |
+          cd dist
+          echo "dmg=$(shasum -a 256 *.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "pkg=$(shasum -a 256 *.pkg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            ```bash
+            brew tap silentstorm618/md-writer
+            brew install --cask md-writer
+            ```
+
+            或从下方 Assets 下载 `MDWriter-<version>.pkg`（双击进安装器）或 `.dmg`（拖入 Applications）。
+
+            ${{ secrets.MACOS_CERTIFICATE != '' && '✅ 本版本已使用 Developer ID 签名并通过 Apple 公证，可直接打开。' || '⚠️ 本版本尚未签名公证（项目未加入 Apple Developer Program）。若 macOS 提示「已损坏，无法打开」，请执行：`xattr -dr com.apple.quarantine /Applications/MDWriter.app`，或使用上面的 Homebrew 方式安装（自动处理）。' }}
+
+      - name: 更新 Homebrew tap
+        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          SHA_PKG: ${{ steps.sha.outputs.pkg }}
+        run: |
+          VER="${VERSION#v}"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/silentstorm618/homebrew-tap.git" tap-repo
+          cd tap-repo
+          sed -i '' "s/version \".*\"/version \"$VER\"/" Casks/md-writer.rb
+          sed -i '' "s/sha256 \".*\"/sha256 \"$SHA_PKG\"/" Casks/md-writer.rb
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/md-writer.rb
+          if git diff --staged --quiet; then
+            echo "cask 无变化，跳过提交"
+          else
+            git commit -m "chore: bump md-writer to $VER"
+            git push
+          fi

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5B8DEF"/>
+      <stop offset="55%" stop-color="#4A6FE3"/>
+      <stop offset="100%" stop-color="#3B57C9"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E9EEFB"/>
+    </linearGradient>
+    <linearGradient id="pen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD166"/>
+      <stop offset="100%" stop-color="#F4A62A"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0.768" stdDeviation="1.152" flood-color="#1B2A5E" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- 底板 -->
+  <rect x="0" y="0" width="64" height="64" rx="14.3168" ry="14.3168" fill="url(#bg)"/>
+  <rect x="0" y="0" width="64" height="32" rx="14.3168" ry="14.3168" fill="#FFFFFF" opacity="0.10"/>
+
+  <!-- 文档 -->
+  <g filter="url(#sh)">
+    <path d="M 16.64 11.52
+             L 39.04 11.52
+             L 47.36 19.84
+             L 47.36 53.760000000000005
+             L 16.64 53.760000000000005 Z"
+          fill="url(#paper)"/>
+    <!-- 折角 -->
+    <path d="M 39.04 11.52
+             L 39.04 19.84
+             L 47.36 19.84 Z"
+          fill="#C6D2F5"/>
+  </g>
+
+  <!-- 文本行（模拟 Markdown） -->
+  <g stroke="#9AA8C7" stroke-width="1.408" stroke-linecap="round">
+    <line x1="20.16" y1="19.84" x2="41.6" y2="19.84"/>
+    <line x1="20.16" y1="23.36" x2="43.839999999999996" y2="23.36"/>
+    <line x1="20.16" y1="26.880000000000003" x2="38.4" y2="26.880000000000003"/>
+  </g>
+  <!-- 标题行更粗 -->
+  <rect x="20.16" y="15.232" width="12.8" height="1.792" rx="0.896" fill="#5B8DEF"/>
+
+  <!-- M 标记（Markdown） -->
+  <g stroke="#5B8DEF" stroke-width="1.92" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.95">
+    <path d="M 20.48 48.96000000000001 L 20.48 43.84 L 23.36 46.400000000000006 L 26.240000000000002 43.84 L 26.240000000000002 48.96000000000001"/>
+  </g>
+
+  <!-- 笔 -->
+  <g transform="rotate(-42 44.8 42.24)">
+    <rect x="42.56" y="26.88" width="4.8" height="19.2" rx="1.152" fill="url(#pen)"/>
+    <path d="M 42.56 46.08 L 44.96 51.2 L 47.36 46.08 Z" fill="#3B3218"/>
+    <rect x="42.56" y="29.12" width="4.8" height="1.792" fill="#FFFFFF" opacity="0.45"/>
+  </g>
+</svg>
