@@ -1,6 +1,6 @@
 cask "md-writer" do
-  version "1.1.1"
-  sha256 "ace392c502e4eea78b68871aca322f62eae7568c451df7c0ce33c9ad7d938550"
+  version "1.1.2"
+  sha256 "caf049219fe38a515c47242770f5c31ff97c5885448c86e1e81009ee377ea884"
 
   url "https://github.com/silentstorm618/md-writer/releases/download/v#{version}/MDWriter-#{version}.pkg"
   name "MD Writer"
