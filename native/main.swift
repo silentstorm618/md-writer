@@ -267,6 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var webView: WKWebView!
     private var docOpenedByApp = false
     private var isJavaScriptReady = false
+    private var decoyTimer: DispatchSourceTimer?
+    private var decoyHealTimer: DispatchSourceTimer?
     private var recentMenu: NSMenu!
     private let recentFilesKey = "MDWriter.recentFiles"
     private let recentFilesLimit = 10
@@ -306,6 +308,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildWindow()
         NSApp.activate(ignoringOtherApps: true)
         registerFileOpen()
+
+        // 启动时自愈：注销被误注册的 WKWebView 缓存目录。
+        //
+        // WKWebView 会生成 $TMPDIR/<bundleid>、~/Library/Caches/<bundleid>
+        // 这类以 bundle id 命名的数据目录。它们没有 Info.plist，
+        // 但 LaunchServices 会把它们注册成 kLSBundleClassApplication，
+        // 于是 open 事件可能被派发给这些空壳 ——
+        // 表现为「双击 .md 只启动 App 却不打开文件」。
+        // 每次启动清理一次，确保 open 事件的归属是正确的。
+        purgeDecoyApps()
+
+        // WKWebView 会在运行期间重建 $TMPDIR 下的数据目录并被 LS 注册，
+        // 定时再清几轮，确保 open 事件始终归属于真正的 App。
+        var rounds = 0
+        var timer: DispatchSourceTimer?
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.purgeDecoyApps()
+            rounds += 1
+            if rounds >= 5 { timer?.cancel(); timer = nil }
+        }
+        let t = DispatchSource.makeTimerSource()
+        t.schedule(deadline: .now() + 2, repeating: 2.0)
+        t.setEventHandler(handler: work)
+        t.resume()
+        timer = t
+        decoyTimer = t
 
         // 启动时报告诊断信息：出问题时看一眼日志就知道 App 状态
         traceOpen("启动完成 启动参数=\(CommandLine.arguments)")
@@ -394,6 +423,61 @@ func application(_ application: NSApplication, open url: URL) {
     }
 
 
+
+    /// 清除会被 LaunchServices 误注册成 App 的缓存 / 空壳目录。
+    ///
+    /// WKWebView 与 AppKit 会生成以 bundle id 命名的运行时数据目录
+    /// （$TMPDIR/<id>、~/Library/Caches/<id>、~/Library/WebKit/<id>），
+    /// 废纸篓里也可能有（把旧版拖进废纸篓时会带上时间戳后缀）。
+    /// 这些目录没有 Contents/Info.plist，但 LaunchServices 会把它们
+    /// 注册成 kLSBundleClassApplication，open 事件随之被派发给空壳 ——
+    /// 症状是「双击 .md 只启动 App 却不打开文件」。
+    ///
+    /// 两件事都要做：
+    ///   1. lsregister -u注销注册
+    ///   2. 删掉目录本身（废纸篓里的必须删，否则系统扫描时会再次注册）
+    /// WKWebView 会重建 $TMPDIR 下的目录，所以定时重复几轮。
+    private func purgeDecoyApps() {
+        let bundleID = (Bundle.main.bundleIdentifier ?? "com.mdwriter.app").lowercased()
+        let real = "/Applications/MDWriter.app"
+        let lsreg = "/System/Library/Frameworks/CoreServices.framework"
+            + "/Frameworks/LaunchServices.framework/Support/lsregister"
+
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let roots = [
+            URL(fileURLWithPath: NSTemporaryDirectory()),
+            home.appendingPathComponent("Library/Caches"),
+            home.appendingPathComponent("Library/WebKit"),
+            home.appendingPathComponent(".Trash"),
+        ]
+
+        for root in roots {
+            let items = (try? FileManager.default.contentsOfDirectory(
+                atPath: root.path)) ?? []
+            for name in items where name.lowercased().contains(bundleID) {
+                let url = root.appendingPathComponent(name)
+                guard url.path != real,
+                      !FileManager.default.fileExists(
+                          atPath: url.appendingPathComponent("Contents/Info.plist").path)
+                else { continue }
+
+                // 1) 注销注册
+                let r = Process()
+                r.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                r.arguments = [lsreg, "-u", url.path]
+                r.standardOutput = FileHandle.nullDevice
+                r.standardError = FileHandle.nullDevice
+                try? r.run()
+                r.waitUntilExit()
+
+                // 2) 删除目录本身。
+                //    $TMPDIR 下的可以随时删（WebKit 会重建）；
+                //    废纸篓里的删不掉也没关系，注销已生效。
+                try? FileManager.default.removeItem(at: url)
+                traceOpen("已清理诱饵: \(url.path)")
+            }
+        }
+    }
 
     /// 打开文件相关的诊断：写到临时文件，便于排查文件关联问题
     private func traceOpen(_ msg: String) {
@@ -488,6 +572,16 @@ func application(_ application: NSApplication, open url: URL) {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         // 允许页面内 file:// 资源与剪贴板
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+
+        // 关键：给 WebView 一个独立、非空的 application name。
+        // WKWebView 默认用 CFBundleIdentifier 作为应用名来建运行时数据目录，
+        // 于是生成 $TMPDIR/com.mdwriter.app / ~/Library/Caches/com.mdwriter.app
+        // 这类**以 bundle id 命名**的目录。它们没有 Info.plist，
+        // 但 LaunchServices 会把同名目录注册成 kLSBundleClassApplication，
+        // 导致 open 事件被派发给这些空壳 ——
+        // 症状是「双击 .md 只启动 App 却不打开文件」。
+        // 改名后缓存目录不再与 bundle id 同名，从根上避免误注册。
+        config.applicationNameForUserAgent = "MDWriterWeb"
 
         let userContent = WKUserContentController()
         // 在页面自己的脚本之前注入语言：前端 boot 时同步就能读到，

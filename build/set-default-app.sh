@@ -142,42 +142,28 @@ if [ "$DEV_IN_LS" = "1" ]; then
   echo "    （已清除构建过程重新登记的开发副本）"
 fi
 
-# 硬校验：LS 里只能有安装版一条路径。
-# 任何诱饵（开发副本 / WebKit 缓存 / 废纸篓空壳）都会让 open 事件被派发过去，
-# 表现为「双击 .md 只启动 App 却不打开文件」。这里宁可报错也不要放过。
-STRAY="$("$LSREG" -dump 2>/dev/null \
-  | grep '^path:' \
-  | grep -i 'mdwriter' \
-  | grep -vF "$DEST_APP" \
-  | sed 's/^path: *//; s/ ([0-9x]*)$//')"
-# 硬校验：LS 里凡是含 mdwriter 的路径，都必须含有 Contents/Info.plist。
-# 只要是缓存目录 / 空壳（缺 Info.plist），一律判定为诱饵并注销 ——
-# 这类目录会让 open 事件被派发过去，App 启动但不打开文件，且毫无征兆。
-while IFS= read -r s; do
-  [ -z "$s" ] && continue
-  [ "$s" = "$DEST_APP" ] && continue
-  if [ -f "$s/Contents/Info.plist" ]; then
-    echo "    [注意] 发现另一份完整 App: $s"
-  else
-    echo "    已清除诱饵: ${s/#$HOME/~}"
-  fi
-  "$LSREG" -u "$s" 2>/dev/null || true
-done <<< "$STRAY"
-
-if [ -n "$STRAY" ]; then
-  sleep 1
-  "$LSREG" -f "$DEST_APP"
-  sleep 1
-fi
+# 硬校验 + 循环清理诱饵。
+#
+# WKWebView 每次运行都会重建 $TMPDIR/<bundleid> 并被 LS 重新注册，
+# 所以必须**反复清理直到干净** —— 单次清理会在几秒内失效。
+# 另外 lsregister -dump 的路径里可能带 "(0x...)" 后缀，
+# 解析不当会导致注销失败，用 Python 正则精确提取。
+# 硬校验 + 循环清理诱饵。
+# WKWebView 会反复重建 $TMPDIR/<bundleid> 并被 LS 重新注册，
+# 单次清理几秒内即失效，必须循环到干净为止。
+python3 "$ROOT/build/clean-decoy-registrations.py" "$DEST_APP"
 
 PROBE="/tmp/mdwriter-probe.md"
 printf '# probe' > "$PROBE" 2>/dev/null || true
-VERIFY="$(swift -e "
+# 用独立的 swift 文件而不是 swift -e，避免多层引号转义出错
+SWIFT_TMP="$(mktemp -t mdwriter-verify).swift"
+cat > "$SWIFT_TMP" <<'SWEOF'
 import AppKit
-let u = URL(fileURLWithPath: \"$PROBE\")
-print(NSWorkspace.shared.urlForApplication(toOpen: u)?.path ?? \"none\")
-" 2>/dev/null | tail -1)"
-rm -f "$PROBE" 2>/dev/null || true
+let u = URL(fileURLWithPath: CommandLine.arguments[1])
+print(NSWorkspace.shared.urlForApplication(toOpen: u)?.path ?? "none")
+SWEOF
+VERIFY="$(swift "$SWIFT_TMP" "$PROBE" 2>/dev/null | tail -1)"
+rm -f "$PROBE" "$SWIFT_TMP" 2>/dev/null || true
 
 if [ "$VERIFY" = "$DEST_APP" ]; then
   echo "    .md 默认用 $DEST_APP 打开"
