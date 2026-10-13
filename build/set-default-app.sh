@@ -55,6 +55,23 @@ if [ -e "$DEST_APP" ]; then
   BAK="${DEST_APP}.old.$(date +%s)"
   if mv "$DEST_APP" "$BAK" 2>/dev/null; then
     echo "    旧版本已改名为 ${BAK##*/}"
+    # 备份轮转：只保留最近 KEEP_BAKS 个。
+    # 不清理的话每跑一次 make default-app 就多一个 7 MB 的副本，
+    # 排查问题时反复重装，几轮下来能堆到几十个（实测 30 个 / 200+ MB）。
+    # 注意：macOS 自带 bash 3.2，没有 mapfile，用 for + 计数实现。
+    KEEP_BAKS=2
+    OLD_LIST="$(ls -1dt "${DEST_APP}".old.* 2>/dev/null || true)"
+    n=0
+    for old in $OLD_LIST; do
+      n=$((n + 1))
+      if [ "$n" -gt "$KEEP_BAKS" ]; then
+        rm -rf "$old" 2>/dev/null \
+          || echo "    [注意] 旧备份需手动清理（属主 $(stat -f '%Su' "$old" 2>/dev/null)）：${old##*/}"
+      fi
+    done
+    if [ "$n" -gt "$KEEP_BAKS" ]; then
+      echo "    已清理 $((n - KEEP_BAKS)) 个历史备份（保留最近 ${KEEP_BAKS} 个）"
+    fi
   else
     echo "    [注意] 已有 ${DEST_APP}，但无法改名（属主 $(stat -f '%Su' "$DEST_APP" 2>/dev/null || echo '?')）。"
     echo "    请在「访达」里把它移到废纸篓，或执行："

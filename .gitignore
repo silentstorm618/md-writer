@@ -13,3 +13,12 @@ homebrew-tap/
 
 # macOS
 .DS_Store
+
+# Python 缓存（build/ 下是 .py 构建脚本）
+__pycache__/
+*.pyc
+
+# 安装脚本留下的备份（make default-app 会按需清理）
+MDWriter.app.old.*
+MDWriter.app.bak
+*.log
