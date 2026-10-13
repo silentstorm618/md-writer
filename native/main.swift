@@ -1460,12 +1460,10 @@ func log(_ msg: String) {
 log("启动 MDWriter…")
 let app = NSApplication.shared
 
-// 必须用顶层全局变量持有 delegate。
-// `NSApplication.delegate` 是 **weak** 引用，若 delegate 只是局部变量，
-// 它会在作用域结束时被 ARC 释放，delegate 变成 nil ——
-// 表现为 application(_:open:) / application(_:openFiles:) 永远不触发，
-// 双击 .md 只启动 App 却不打开文件。
-// （这个坑排查了很久：日志里始终只有「启动完成」而没有 callback 记录。）
+// 顶层变量持有 delegate，语义更清晰。
+// （注：曾怀疑 NSApplication.delegate 的 weak 引用导致 delegate 被提前释放，
+//  实测 Swift 顶层 let 的生命周期与进程一致，不会被提前释放，
+//  所以那不是本问题的原因。此处只是把变量名改明确。）
 let mdWriterDelegate = AppDelegate()
 app.delegate = mdWriterDelegate
 app.setActivationPolicy(.regular)
