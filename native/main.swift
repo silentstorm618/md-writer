@@ -136,6 +136,7 @@ enum L10n {
         "menu.zoomWindow": "缩放",
         "menu.bringAllToFront": "前置全部窗口",
         "menu.help": "帮助",
+        "err.logNotFound": "还没有诊断日志，正常打开一次文件后就会出现",
         "menu.cheatsheet": "Markdown 语法速查",
         // 窗口标题 / 状态
         "title.docs": "[{n} 个文档] ",
@@ -233,6 +234,7 @@ enum L10n {
         "menu.zoomWindow": "Zoom",
         "menu.bringAllToFront": "Bring All to Front",
         "menu.help": "Help",
+        "err.logNotFound": "No diagnostic log yet — it appears after opening a file",
         "menu.cheatsheet": "Markdown Cheatsheet",
 
         "title.docs": "[{n} docs] ",
@@ -266,6 +268,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recentMenu: NSMenu!
     private let recentFilesKey = "MDWriter.recentFiles"
     private let recentFilesLimit = 10
+    /// 已打开文档路径白名单：openFile 通过这里记下，asset.save / asset.list 用它校验 docPath。
+    /// 不在这里的路径会被视为「伪造」，拒绝写入 / 读取。
+    /// 用线程同步队列保护：消息桥回调跨线程调用。
+    private var openedDocPaths = Set<String>()
+    private let openedDocPathsLock = NSLock()
 
     // MARK: 生命周期
 
@@ -299,10 +306,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         registerFileOpen()
 
+        // 启动时报告诊断信息：出问题时看一眼日志就知道 App 状态
+        traceOpen("启动完成 启动参数=\(CommandLine.arguments)")
+
         // 启动时若带文件参数则打开
         let args = CommandLine.arguments
         if args.count > 1, FileManager.default.fileExists(atPath: args[1]) {
             openFile(atPath: args[1])
+        } else if args.count > 1 {
+            traceOpen("启动参数存在但文件不存在: \(args[1])")
         }
     }
 
@@ -349,6 +361,19 @@ func application(_ application: NSApplication, open url: URL) {
             forEventClass: AEEventClass(kCoreEventClass),
             andEventID: AEEventID(kAEOpenDocuments)
         )
+    }
+
+    /// 在访达中打开诊断日志目录，方便排查文件关联问题
+    @objc private func openDiagnosticLog() {
+        let p = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mdwriter-open.log")
+        if FileManager.default.fileExists(atPath: p.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([p])
+        } else {
+            let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            NSWorkspace.shared.activateFileViewerSelecting([dir])
+            showToast(L10n.tr("err.logNotFound"), kind: "info")
+        }
     }
 
     /// 从 alias 列表描述符里还原文件路径。
@@ -580,11 +605,20 @@ func application(_ application: NSApplication, open url: URL) {
         case "debug.screenshot":
             saveScreenshot(to: payload["path"] as? String)
         case "debug.eval":
+            // 仅允许在前端通过 boot 时设置的 window.__MDWRITER_DEBUG__ = true 后调用。
+            // 这是「自检模式」专用入口：打开它能执行任意 JS（如截图脚本、查 DOM）。
+            // 生产构建里这个 flag 永远 false，所以即便前端被 XSS 攻击也无法借这条桥执行任意代码。
             let code = payload["code"] as? String ?? ""
-            webView.evaluateJavaScript(code) { result, error in
-                let r = String(describing: result ?? "nil")
-                let e = error?.localizedDescription ?? "nil"
-                print("[eval] result=\(r.prefix(400)) error=\(e)")
+            webView.evaluateJavaScript("window.__MDWRITER_DEBUG__ === true") { [weak self] flag, _ in
+                guard let self, (flag as? Bool) == true else {
+                    print("[eval] 拒绝：debug 模式未启用")
+                    return
+                }
+                self.webView.evaluateJavaScript(code) { result, error in
+                    let r = String(describing: result ?? "nil")
+                    let e = error?.localizedDescription ?? "nil"
+                    print("[eval] result=\(r.prefix(400)) error=\(e)")
+                }
             }
         case "setLanguage":
             // 前端切换语言 -> 存偏好并重建菜单（菜单是启动时一次性构建的）
@@ -668,6 +702,12 @@ func application(_ application: NSApplication, open url: URL) {
             return
         }
         recordRecent(path)
+        // 加入「已打开文档」白名单：asset.save / asset.list 只能作用于这里的路径，
+        // 防止前端伪造 docPath 让我们读 / 写到任意目录。
+        let normalized = (path as NSString).standardizingPath
+        openedDocPathsLock.lock()
+        openedDocPaths.insert(normalized)
+        openedDocPathsLock.unlock()
         trace("openFile: 已发送 \(text.count) 字符")
         callJS("documentOpened", [
             "path": path,
@@ -761,27 +801,94 @@ func application(_ application: NSApplication, open url: URL) {
 
     // MARK: 图片资源库
 
+    /// 单个图片资源的大小上限：50 MB。base64 编码体积约 1.33x，留足余量后是安全网，
+    /// 防止恶意 / 失控的前端一次性把巨文件塞进来撑爆磁盘。
+    private static let maxAssetBytes = 50 * 1024 * 1024
+    /// 允许写入 assets/ 的扩展名白名单。SVG 不在此列：SVG 可内嵌脚本，
+    /// 写入后会通过原 image URL 加载，存在 XSS 入口。
+    private static let allowedAssetExts: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "bmp",
+    ]
+
+    /// 校验文件名是否安全：必须是纯 basename，不含路径分隔符、不为「.」「..」。
+    /// 防止 `../../etc/passwd` 这类路径遍历。
+    private static func sanitizedAssetName(_ raw: String) -> String? {
+        // 截到最后一个路径分隔符之后；不允许出现 :（Windows 盘符）和 NUL
+        let basename = (raw as NSString).lastPathComponent
+        if basename.isEmpty || basename == "." || basename == ".." { return nil }
+        if basename.contains("/") || basename.contains("\\") || basename.contains(":") { return nil }
+        // 限定扩展名；空扩展名也拒绝（避免奇葩类型）
+        let ext = (basename as NSString).pathExtension.lowercased()
+        guard !ext.isEmpty, allowedAssetExts.contains(ext) else { return nil }
+        // 长度上限，防 DoS / 文件名过长的文件系统错误
+        guard basename.count <= 80 else { return nil }
+        return basename
+    }
+
     private func saveAsset(_ payload: [String: Any]) {
         guard let b64 = payload["base64"] as? String,
               let data = Data(base64Encoded: b64),
-              let name = payload["name"] as? String else { return }
-        let dir = Self.assetsDir(for: payload["docPath"] as? String)
+              let nameRaw = payload["name"] as? String else { return }
+        // 文件大小上限
+        guard data.count <= Self.maxAssetBytes else {
+            showToast("图片过大（>50MB），已拒绝", kind: "warn")
+            return
+        }
+        // 文件名安全：纯 basename + 白名单扩展名
+        guard let name = Self.sanitizedAssetName(nameRaw) else {
+            showToast("文件名不合法", kind: "warn")
+            return
+        }
+        // docPath 必须在已打开的文件白名单里；空 docPath 走 Application Support。
+        // 前端如果伪造 docPath（如 ~/Library/...），这里直接拒掉，
+        // 避免把图片写到任意用户有权限的目录里。
+        let docPath = payload["docPath"] as? String
+        guard Self.isDocPathAllowed(docPath) else {
+            showToast("文档路径无效，未保存图片", kind: "warn")
+            return
+        }
+        let dir = Self.assetsDir(for: docPath)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(name)
-        try? data.write(to: url)
+        // 写入前再做一次标准化 + 范围校验：结果路径必须仍在 dir 之下
+        let resolved = url.standardizedFileURL.path
+        let dirResolved = dir.standardizedFileURL.path.hasSuffix("/") ? dir.standardizedFileURL.path : dir.standardizedFileURL.path + "/"
+        guard resolved.hasPrefix(dirResolved) else {
+            showToast("路径越界，未保存图片", kind: "warn")
+            return
+        }
+        do {
+            try data.write(to: url, options: [.atomic])
+        } catch {
+            showToast(L10n.tr("err.saveFailed", ["msg": error.localizedDescription]), kind: "error")
+            return
+        }
         callJS("assetSaved", ["name": name, "url": "assets/\(name)", "id": payload["id"] as? String ?? name])
     }
 
     private func listAssets(_ payload: [String: Any]) {
-        let dir = Self.assetsDir(for: payload["docPath"] as? String)
+        let docPath = payload["docPath"] as? String
+        // 同 saveAsset：必须经过 docPath 白名单校验
+        guard Self.isDocPathAllowed(docPath) else {
+            callJS("assetList", ["files": []])
+            return
+        }
+        let dir = Self.assetsDir(for: docPath)
         var files: [[String: Any]] = []
         if let items = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
             for f in items {
                 if f.hasPrefix("."), f != ".DS_Store" { continue }
-                var entry: [String: Any] = ["name": f, "url": "assets/\(f)"]
-                // 把图片内容转成 base64 dataURL 一并返回，前端直接放进 MDWriterAssets
+                // 跳过隐藏目录 / 符号链接 / 不在白名单的扩展名
+                let ext = (f as NSString).pathExtension.lowercased()
+                guard Self.allowedAssetExts.contains(ext) else { continue }
                 let fullPath = dir.appendingPathComponent(f).path
-                if let data = FileManager.default.contents(atPath: fullPath) {
+                // 二次范围校验：防止列表里出现符号链接指向目录外
+                let resolved = (fullPath as NSString).standardizingPath
+                let dirResolved = (dir.path as NSString).standardizingPath
+                guard resolved.hasPrefix(dirResolved + "/") else { continue }
+                var entry: [String: Any] = ["name": f, "url": "assets/\(f)"]
+                if let data = FileManager.default.contents(atPath: fullPath),
+                   data.count <= Self.maxAssetBytes {
                     entry["dataURL"] = "data:\(Self.mimeForPath(f));base64,\(data.base64EncodedString())"
                 }
                 if let d = try? FileManager.default.attributesOfItem(atPath: fullPath),
@@ -813,12 +920,28 @@ func application(_ application: NSApplication, open url: URL) {
     static func assetsDir(for docPath: String?) -> URL {
         let fm = FileManager.default
         if let docPath, !docPath.isEmpty {
-            let parent = (docPath as NSString).deletingLastPathComponent
-            return URL(fileURLWithPath: parent).appendingPathComponent("assets")
+            // 即便外层校验过 docPath，这里再做一次规范化防御：
+            // 防止父目录里出现 symlink 把我们带出预期的目录。
+            let normalized = (docPath as NSString).standardizingPath
+            let parent = (normalized as NSString).deletingLastPathComponent
+            return URL(fileURLWithPath: parent).appendingPathComponent("assets", isDirectory: true)
         }
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MDWriter/assets", isDirectory: true)
         return support
+    }
+
+    /// docPath 是否在「已打开文档」白名单里：nil / 空字符串视为合法（走 Application Support）。
+    /// 防止前端通过伪造 docPath 让原生读到任意目录。
+    static func isDocPathAllowed(_ docPath: String?) -> Bool {
+        guard let docPath, !docPath.isEmpty else { return true }
+        // 拿到当前实例的白名单；这里是静态方法，借助 shared delegate 单例。
+        // AppDelegate 是单例（main.swift 创建一次），所以直接用 NSApp.delegate 取。
+        guard let delegate = NSApp.delegate as? AppDelegate else { return false }
+        delegate.openedDocPathsLock.lock()
+        defer { delegate.openedDocPathsLock.unlock() }
+        let normalized = (docPath as NSString).standardizingPath
+        return delegate.openedDocPaths.contains(normalized)
     }
 
     // MARK: 打印 / PDF
@@ -1017,6 +1140,10 @@ func application(_ application: NSApplication, open url: URL) {
         let helpItem = NSMenuItem()
         let helpMenu = NSMenu(title: L10n.tr("menu.help"))
         helpMenu.addItem(withTitle: L10n.tr("menu.cheatsheet"), action: #selector(showHelp), keyEquivalent: "/")
+        // 打开诊断日志：文件关联出问题时直接看，不用去猜路径
+        let logItem = NSMenuItem(title: "打开诊断日志", action: #selector(openDiagnosticLog), keyEquivalent: "")
+        logItem.target = self
+        helpMenu.addItem(logItem)
         helpItem.submenu = helpMenu
         mainMenu.addItem(helpItem)
 
