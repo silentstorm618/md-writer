@@ -99,7 +99,25 @@ def verify():
             if not present:
                 ok = False
 
-    # 6. 体积
+    # 6. 版本号一致性
+    # build/VERSION 是唯一真源（pack-app.py 注入到 Info.plist）。
+    # 这里核对模板与真源是否同步 —— 模板里的值虽然会被覆盖，
+    # 但一旦漂移会误导人（比如在 Xcode 里直接看到过期版本号）。
+    version_file = ROOT / "build" / "VERSION"
+    src_plist = ROOT / "native" / "Info.plist"
+    want = version_file.read_text().strip() if version_file.exists() else ""
+    got = ""
+    if src_plist.exists():
+        with open(src_plist, "rb") as f:
+            got = plistlib.load(f).get("CFBundleShortVersionString", "")
+    if want and got:
+        same = "✅" if want == got else "❌"
+        print(f"  {same} 版本号: build/VERSION={want} native/Info.plist={got}")
+        if want != got:
+            print("     （打包时会被 build/VERSION 覆盖，但模板漂移容易误导，建议同步）")
+            ok = False
+
+    # 7. 体积
     total = sum(f.stat().st_size for f in APP.rglob("*") if f.is_file())
     print(f"\n  总大小: {total/1024/1024:.1f} MB")
     return ok
