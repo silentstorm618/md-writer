@@ -7,7 +7,7 @@
 ### 推荐：Homebrew
 
 ```bash
-brew tap silentstorm618/md-writer
+brew tap silentstorm618/md-writer https://github.com/silentstorm618/md-writer
 brew trust silentstorm618/md-writer
 brew install --cask md-writer
 ```
@@ -210,7 +210,7 @@ make verify-sign                # 体检当前产物，看能否对外分发
 
 产物落在 `dist/`：`MDWriter-<版本>.dmg`、`MDWriter-<版本>.pkg`。
 
-发版只需 push tag，CI 会自动构建、发 release，并更新 Homebrew tap 里的
+发版只需 push tag，CI 会自动构建、发 release，并更新 `Casks/md-writer.rb` 里的
 version / sha256：
 
 ```bash

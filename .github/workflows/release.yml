@@ -14,7 +14,6 @@ jobs:
       # secrets 上下文不允许出现在 step 的 if 里（GitHub 会判定整个 workflow 无效，
       # 连 job 都不会生成）。必须先落到 job 级 env，再用 env.* 判断。
       HAS_CERT: ${{ secrets.MACOS_CERTIFICATE }}
-      HAS_TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -111,7 +110,7 @@ jobs:
             echo "## 安装"
             echo ""
             echo '```bash'
-            echo "brew tap silentstorm618/md-writer"
+            echo "brew tap silentstorm618/md-writer https://github.com/silentstorm618/md-writer"
             echo "brew trust silentstorm618/md-writer"
             echo "brew install --cask md-writer"
             echo '```'
@@ -142,17 +141,15 @@ jobs:
           append_body: true
           generate_release_notes: true
 
-      - name: 更新 Homebrew tap
-        if: ${{ env.HAS_TAP_TOKEN != '' }}
+      # cask 就在本仓库根目录的 Casks/，直接改完推回 main 即可。
+      # 用内置 GITHUB_TOKEN，不需要额外配 TAP_GITHUB_TOKEN。
+      # 注意：这次 push 不会再次触发本 workflow（它只监听 v* tag）。
+      - name: 更新 cask 的 version / sha256
         env:
-          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
           VERSION: ${{ github.ref_name }}
           SHA_PKG: ${{ steps.sha.outputs.pkg }}
         run: |
           VER="${VERSION#v}"
-          # 仓库名必须是 homebrew-<name>，这样 `brew tap silentstorm618/md-writer` 才能解析到它
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/silentstorm618/homebrew-md-writer.git" tap-repo
-          cd tap-repo
           sed -i '' "s/version \".*\"/version \"$VER\"/" Casks/md-writer.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"$SHA_PKG\"/" Casks/md-writer.rb
           git config user.name  "github-actions[bot]"
@@ -161,6 +158,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "cask 无变化，跳过提交"
           else
-            git commit -m "chore: bump md-writer to $VER"
-            git push
+            git commit -m "chore: bump cask to $VER"
+            # 固定推 main：tag 触发时 GITHUB_REF_NAME 是 "v1.0.2"，不能拿它当分支名
+            git push origin HEAD:refs/heads/main
           fi

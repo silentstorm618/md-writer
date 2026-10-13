@@ -245,23 +245,33 @@ TypeError: webidl.util.markAsUncloneable is not a function
 
 CI 的 `node-version` 必须 ≥ 22，`package.json` 的 `engines` 已同步收紧为 `>=22.19.0`。
 
-### 4. Homebrew tap 的仓库命名是硬规则
+### 4. tap 合并进主仓库后，`brew tap` 必须显式给 URL
 
-`brew tap <user>/<name>` 实际会去克隆 **`<user>/homebrew-<name>`**。
-
-想让用户敲 `brew tap silentstorm618/md-writer`，仓库就必须叫 `homebrew-md-writer`。
-如果叫 `homebrew-tap`，用户得敲 `brew tap silentstorm618/tap` —— 很别扭。
-（首发时就踩了这个，仓库建完才改名。）
-
-### 5. Homebrew 4.x 要求先 trust 第三方 tap
+Homebrew 默认按 `homebrew-<name>` 去找仓库，而主仓库叫 `md-writer`，
+所以裸敲 `brew tap silentstorm618/md-writer` 会找不到仓库。显式指定 URL 即可：
 
 ```bash
-brew tap silentstorm618/md-writer
+brew tap silentstorm618/md-writer https://github.com/silentstorm618/md-writer
+```
+
+代价是命令长一点，换来 cask 和源码在同一个仓库：发版时 CI 直接改
+`Casks/md-writer.rb` 再推回 main，不用跨仓库 push，也**不再需要**
+`TAP_GITHUB_TOKEN`（改用内置 `GITHUB_TOKEN`）。
+
+### 5. cask 必须放在仓库根目录的 `Casks/`
+
+放在子目录（比如最初的 `homebrew-tap/Casks/`）Homebrew 找不到。
+这是把 tap 合并进主仓库时唯一的结构约束。
+
+### 6. Homebrew 4.x 要求先 trust 第三方 tap
+
+```bash
+brew tap silentstorm618/md-writer https://github.com/silentstorm618/md-writer
 brew trust silentstorm618/md-writer   # 不能漏，否则 "Refusing to load cask"
 brew install --cask md-writer
 ```
 
-### 6. cask 里 `depends_on macos` 用符号，别用字符串
+### 7. cask 里 `depends_on macos` 用符号，别用字符串
 
 ```ruby
 depends_on macos: ">= :ventura"   # ❌ 已废弃，brew info 会告警
