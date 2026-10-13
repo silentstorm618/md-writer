@@ -316,6 +316,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openFile(atPath: args[1])
         } else if args.count > 1 {
             traceOpen("启动参数存在但文件不存在: \(args[1])")
+        } else {
+            // 没有启动参数：说明是裸启动（点 Dock 图标 / 访达打开 App 本体）。
+            // 若其实是「双击了某个 .md 但文件没送到」，用户会看到空文档，
+            // 这时明确提示一下，避免误以为是文件损坏。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                guard let self else { return }
+                self.traceOpen("裸启动（无文件参数）")
+            }
         }
     }
 
@@ -332,6 +340,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 func application(_ application: NSApplication, open url: URL) {
         traceOpen("callback application(open:) \(url.path)")
         openFile(atPath: url.path)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // NSApplicationDelegate 里还有两个历史命名的回调，
+    // AppKit 在不同场景下会调其中之一，必须都实现：
+    //   application(_:openFile:)   —— 单数，legacy 名字
+    //   application(_:openFiles:)  —— 复数
+    // 漏掉任何一个，文件就静默丢失（App 正常启动但内容为空）。
+    func application(_ application: NSApplication, openFile filename: String) {
+        traceOpen("callback application(openFile:) \(filename)")
+        openFile(atPath: filename)
         NSApp.activate(ignoringOtherApps: true)
     }
 
