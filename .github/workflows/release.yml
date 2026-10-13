@@ -68,10 +68,11 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           NOTARY_KEY_PATH: /tmp/AuthKey.p8
         run: |
           if [ -n "$NOTARY_KEY_ID" ]; then
-            printf '%s' '${{ secrets.NOTARY_KEY_P8 }}' > "$NOTARY_KEY_PATH"
+            printf '%s' "$NOTARY_KEY_P8" > "$NOTARY_KEY_PATH"
             chmod 600 "$NOTARY_KEY_PATH"
           fi
           python3 build/notarize.py --dmg --pkg
@@ -95,22 +96,45 @@ jobs:
           echo "dmg=$(shasum -a 256 *.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "pkg=$(shasum -a 256 *.pkg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
+      # 说明文本在 shell 里生成：GH Actions 表达式不支持字符串里的反引号，
+      # 直接写在 body 里会导致整个 workflow 解析失败。
+      - name: 生成 Release 说明
+        env:
+          HAS_CERT: ${{ secrets.MACOS_CERTIFICATE }}
+        run: |
+          {
+            echo "## 安装"
+            echo ""
+            echo '```bash'
+            echo "brew tap silentstorm618/md-writer"
+            echo "brew install --cask md-writer"
+            echo '```'
+            echo ""
+            echo '或从下方 Assets 下载 `MDWriter-<version>.pkg`（双击进安装器）或 `.dmg`（拖入 Applications）。'
+            echo ""
+            if [ -n "$HAS_CERT" ]; then
+              echo "✅ 本版本已使用 Developer ID 签名并通过 Apple 公证，可直接打开。"
+            else
+              echo "⚠️ 本版本尚未签名公证（项目未加入 Apple Developer Program）。"
+              echo ""
+              echo "若 macOS 提示「已损坏，无法打开」，请执行："
+              echo ""
+              echo '```bash'
+              echo "xattr -dr com.apple.quarantine /Applications/MDWriter.app"
+              echo '```'
+              echo ""
+              echo "或使用上面的 Homebrew 方式安装（自动处理）。"
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
       - name: 创建 Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          body_path: release-notes.md
+          append_body: true
           generate_release_notes: true
-          body: |
-            ## 安装
-
-            ```bash
-            brew tap silentstorm618/md-writer
-            brew install --cask md-writer
-            ```
-
-            或从下方 Assets 下载 `MDWriter-<version>.pkg`（双击进安装器）或 `.dmg`（拖入 Applications）。
-
-            ${{ secrets.MACOS_CERTIFICATE != '' && '✅ 本版本已使用 Developer ID 签名并通过 Apple 公证，可直接打开。' || '⚠️ 本版本尚未签名公证（项目未加入 Apple Developer Program）。若 macOS 提示「已损坏，无法打开」，请执行：`xattr -dr com.apple.quarantine /Applications/MDWriter.app`，或使用上面的 Homebrew 方式安装（自动处理）。' }}
 
       - name: 更新 Homebrew tap
         if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
