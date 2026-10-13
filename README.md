@@ -21,6 +21,18 @@ brew trust silentstorm618/md-writer
 brew install --cask md-writer
 ```
 
+> ⚠️ **请勿使用 `silentstorm618/homebrew-md-writer` 这个 tap**
+>
+> 该仓库已于 v1.0.1 后归档，停留在旧版本 —— 其中包含
+> 「双击 .md 打不开」的已知缺陷。v1.1.0 之后的版本都在本仓库内，
+> 由 CI 发版时自动更新 cask。本仓库即 tap，请直接使用上面的命令。
+>
+> 如果你之前 tap 过它：
+>
+> ```bash
+> brew untap silentstorm618/homebrew-md-writer
+> ```
+
 ### 手动下载
 
 从 [Releases](https://github.com/silentstorm618/md-writer/releases) 下载 `MDWriter-<版本>.pkg`（双击进安装器，自动装到 Applications）
