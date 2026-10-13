@@ -187,3 +187,106 @@ git tag v1.0.1 && git push origin v1.0.1
 
 不花钱的唯一可行路径是**绕开 quarantine**，即当前采用的 Homebrew Cask 方案
 （安装时自动清除 `com.apple.quarantine`）。
+
+---
+
+## 九、首发实录：v1.0.0 踩过的坑（2026-10-13）
+
+首发当天 CI 连续失败三次，全是「不看日志根本猜不到」的坑。记下来避免重犯。
+
+### 1. GitHub Actions：`secrets` 不能写在 step 的 `if:` 里
+
+```yaml
+- name: 签名
+  if: ${{ secrets.MACOS_CERTIFICATE != '' }}   # ❌ 会让整个 workflow 失效
+```
+
+GitHub 判定 **workflow 文件本身非法**，连 job 都不会生成。表现很有迷惑性：
+
+- run **0 秒**结束、conclusion = failure
+- `gh run view` 只说 "This run likely failed because of a workflow file issue"
+- `--log-failed` 拿不到任何日志（因为没有 job，自然没有日志）
+
+正确写法是先在 **job 级 `env`** 落值，再用 `env.*` 判断：
+
+```yaml
+jobs:
+  build:
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE }}
+    steps:
+      - if: ${{ env.HAS_CERT != '' }}
+```
+
+排查利器：
+
+```bash
+brew install actionlint && actionlint .github/workflows/release.yml
+```
+
+这类问题本地就能查出来，不用推上去等 CI 报错。
+
+### 2. GitHub Actions 表达式不支持字符串里的反引号
+
+发布说明里想写 `` `xattr -dr com.apple.quarantine ...` `` 这类代码，
+如果塞进 `${{ ... && '...' || '...' }}` 的表达式里，解析会失败。
+
+改法：在 shell 里生成说明文本，再用 `body_path` 传给 action，
+不要在表达式里拼字符串。
+
+### 3. Node 版本：`jsdom@30` 跑不了 Node 20
+
+前端 DOM 自检依赖 `jsdom@30` → 它依赖 `undici@8`，后者要求 **Node ≥ 22.19.0**。
+Node 20 下会在 `require` 阶段直接崩：
+
+```
+TypeError: webidl.util.markAsUncloneable is not a function
+```
+
+CI 的 `node-version` 必须 ≥ 22，`package.json` 的 `engines` 已同步收紧为 `>=22.19.0`。
+
+### 4. Homebrew tap 的仓库命名是硬规则
+
+`brew tap <user>/<name>` 实际会去克隆 **`<user>/homebrew-<name>`**。
+
+想让用户敲 `brew tap silentstorm618/md-writer`，仓库就必须叫 `homebrew-md-writer`。
+如果叫 `homebrew-tap`，用户得敲 `brew tap silentstorm618/tap` —— 很别扭。
+（首发时就踩了这个，仓库建完才改名。）
+
+### 5. Homebrew 4.x 要求先 trust 第三方 tap
+
+```bash
+brew tap silentstorm618/md-writer
+brew trust silentstorm618/md-writer   # 不能漏，否则 "Refusing to load cask"
+brew install --cask md-writer
+```
+
+### 6. cask 里 `depends_on macos` 用符号，别用字符串
+
+```ruby
+depends_on macos: ">= :ventura"   # ❌ 已废弃，brew info 会告警
+depends_on macos: :ventura        # ✅
+```
+
+---
+
+## 十、下一个里程碑：自动更新
+
+**建议排在公证之后再做。** 原因是未公证状态下做自动更新反而有害：
+
+Sparkle 下载新版后会给 App 打上 `com.apple.quarantine`，而你没有 Developer ID
+无法公证 → 用户点「更新」之后反而打不开，比不更新更糟。
+
+Homebrew 之所以现在能绕过，是因为它安装时主动清掉了这个属性；Sparkle 没有这一环。
+
+所以顺序应该是：
+
+1. 买开发者账号 → `make notarize`（脚本已就位，不用改代码）
+2. 引入 Sparkle + edDSA 签名 appcast（edDSA 密钥是自签的，不需要 Apple）
+3. 到那时再考虑是否还需要维护 Homebrew tap
+
+在那之前，用户升级走：
+
+```bash
+brew upgrade --cask md-writer
+```

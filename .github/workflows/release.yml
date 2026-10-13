@@ -17,9 +17,9 @@ jobs:
       HAS_TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.1.0
         with:
           # jsdom@30 / undici@8 要求 Node 22.19+，Node 20 会直接崩在 require 阶段
           node-version: '24'
@@ -106,6 +106,7 @@ jobs:
       # 直接写在 body 里会导致整个 workflow 解析失败。
       - name: 生成 Release 说明
         run: |
+          # shellcheck disable=SC2016   # 反引号是写给 Markdown 看的，不要在这展开
           {
             echo "## 安装"
             echo ""
@@ -134,7 +135,7 @@ jobs:
           cat release-notes.md
 
       - name: 创建 Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           files: dist/*
           body_path: release-notes.md
