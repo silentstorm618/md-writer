@@ -5,7 +5,7 @@
   "description": "MD Writer - macOS 原生 Markdown 所见即所得编辑器，可导出 HTML/PDF/DOCX/PNG",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "build": "node build/build.mjs",
