@@ -111,6 +111,7 @@ jobs:
             echo ""
             echo '```bash'
             echo "brew tap silentstorm618/md-writer"
+            echo "brew trust silentstorm618/md-writer"
             echo "brew install --cask md-writer"
             echo '```'
             echo ""
@@ -148,7 +149,8 @@ jobs:
           SHA_PKG: ${{ steps.sha.outputs.pkg }}
         run: |
           VER="${VERSION#v}"
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/silentstorm618/homebrew-tap.git" tap-repo
+          # 仓库名必须是 homebrew-<name>，这样 `brew tap silentstorm618/md-writer` 才能解析到它
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/silentstorm618/homebrew-md-writer.git" tap-repo
           cd tap-repo
           sed -i '' "s/version \".*\"/version \"$VER\"/" Casks/md-writer.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"$SHA_PKG\"/" Casks/md-writer.rb
