@@ -12,6 +12,10 @@
 NODE    ?= node
 PYTHON  ?= python3
 SWIFT   ?= swiftc
+# 版本号：CI 通过 MDWRITER_VERSION 环境变量传入（如 v1.1.1），
+# 本地回退读 build/VERSION。pack-app.py 剥掉前导 v 后写入 Info.plist
+MDWRITER_VERSION ?= $(shell cat build/VERSION 2>/dev/null | tr -d '[:space:]')
+export MDWRITER_VERSION
 
 all: app
 

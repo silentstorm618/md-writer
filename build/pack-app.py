@@ -39,6 +39,24 @@ def main():
     if src_plist.exists():
         shutil.copy2(src_plist, CONTENTS / "Info.plist")
 
+    # 注入版本号：CI 通过 MDWRITER_VERSION 环境变量传入（值形如 "v1.1.1"，
+    # 兼容地剥掉前导 v），本地回退读 build/VERSION。
+    # 单一真源，避免 Info.plist 写死导致 App 报告版本和 cask 不一致
+    version = os.environ.get("MDWRITER_VERSION", "").strip()
+    if version.startswith("v"):
+        version = version[1:]
+    if not version:
+        version_file = ROOT / "build" / "VERSION"
+        if version_file.exists():
+            version = version_file.read_text().strip()
+    if version:
+        r = run(f'plutil -replace CFBundleShortVersionString '
+                f'-string "{version}" "{CONTENTS}/Info.plist"')
+        if r.returncode == 0:
+            print(f"[pack] 版本号已注入: {version}")
+        else:
+            print(f"[pack] ⚠️  版本号注入失败: {(r.stderr or '').strip()[:120]}")
+
     # 图标
     icon = ROOT / "native" / "AppIcon.icns"
     if icon.exists():
