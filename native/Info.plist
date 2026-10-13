@@ -12,25 +12,10 @@
 				<string>md</string>
 				<string>markdown</string>
 				<string>mdown</string>
-			</array>
-			<key>CFBundleTypeName</key>
-			<string>Markdown 文档</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>LSHandlerRank</key>
-			<string>Default</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>net.daringfireball.markdown</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
 				<string>mkd</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>Markdown 文档 (旧扩展名)</string>
+			<string>Markdown 文档</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>

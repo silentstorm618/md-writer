@@ -6,6 +6,7 @@
 """
 import os
 import pathlib
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,10 @@ APP = ROOT / "native" / "MDWriter.app"
 CONTENTS = APP / "Contents"
 MACOS = CONTENTS / "MacOS"
 RES = CONTENTS / "Resources"
+
+# 安装版的正式 id；开发副本用另一个，避免两者争抢文件关联
+FORMAL_BUNDLE_ID = "com.mdwriter.app"
+DEV_BUNDLE_ID = "com.mdwriter.dev"
 
 
 def run(cmd, **kw):
@@ -79,6 +84,19 @@ def main():
         print("❌ 未找到已编译的二进制，请先运行 make native")
         return 1
     os.chmod(binary, 0o755)
+
+    # 开发副本用独立 bundle id，避免与安装版争抢文件关联。
+    # 两份 App 同 id 时，LaunchServices 无法判定该派发 open 事件给谁，
+    # 表现为「双击 .md 只启动 App 却不打开文件」。
+    # set-default-app.sh 装到 /Applications 前会改回正式 id。
+    dev_plist = CONTENTS / "Info.plist"
+    with open(dev_plist, "rb") as f:
+        info = plistlib.load(f)
+    if info.get("CFBundleIdentifier") == FORMAL_BUNDLE_ID:
+        info["CFBundleIdentifier"] = DEV_BUNDLE_ID
+        with open(dev_plist, "wb") as f:
+            plistlib.dump(info, f)
+        print(f"[pack]    开发副本 bundle id: {DEV_BUNDLE_ID}")
 
     # 签名
     if has_developer_id():

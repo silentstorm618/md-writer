@@ -66,6 +66,22 @@ fi
 
 xattr -cr "$SRC_APP" 2>/dev/null || true
 cp -R "$SRC_APP" "$DEST_APP"
+
+# 开发副本用 com.mdwriter.dev（见 pack-app.py），装到 /Applications 前改回正式 id。
+# 若不还原，LaunchServices 里的处理器身份与已注册的默认处理者不一致，
+# 设置的默认关联会失效。
+python3 - "$DEST_APP" <<'PYEOF'
+import plistlib, pathlib, sys
+p = pathlib.Path(sys.argv[1]) / "Contents" / "Info.plist"
+with open(p, "rb") as f:
+    info = plistlib.load(f)
+if info.get("CFBundleIdentifier") != "com.mdwriter.app":
+    info["CFBundleIdentifier"] = "com.mdwriter.app"
+    with open(p, "wb") as f:
+        plistlib.dump(info, f)
+    print("    bundle id 已还原为 com.mdwriter.app")
+PYEOF
+
 echo "    已安装（属主 $(stat -f '%Su' "$DEST_APP")）"
 
 echo "==> 注销开发副本与陈旧记录"
